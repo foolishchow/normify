@@ -1,7 +1,7 @@
 # Dual-Side Mode
 
 - Action: `dual-side-mode`
-- Status: `draft`
+- Status: `ready`
 - Updated: 2026-09-25
 - Status authority: [Action Status](../STATUS.md)
 - Design source: [Dual-Side Mode 设计 §7–§10](../../SERVER-MODE.md)
@@ -47,7 +47,7 @@
 
 ## Requirements
 
-- **R-001 MUST**：Bridge 抽象不破坏现状——LocalBridge 包 fs 后 `tests/parity-differential.mjs` 仍 27 PASS，8 套 npm test 仍绿（DP1）。
+- **R-001 MUST**：Bridge 抽象不破坏现状——LocalBridge 包 fs 后 `tests/parity-differential.mjs` 仍 27 PASS，9 套 npm test 仍绿（DP1）。
 - **R-002 MUST**：`NORMIFY_TRANSPORT=http` 起 server，`tools/list` 返 31；`=stdio` 仍工作（dual transport）（DP2）。
 - **R-003 MUST**：HTTP 模式下两并发 session 隔离——A 的 companion 计数不影响 B（复用 session-isolation 抽象）；DSH-direct vs HTTP-MCP-client parity 成立（DP2）。
 - **R-004 MUST**：pi 瘦客户端连 HTTP server，31 工具注册 + call `normify_help` ok（DP3）。
@@ -78,7 +78,7 @@
 | ID | Requirement | Observable condition | Planned evidence | Status |
 | --- | --- | --- | --- | --- |
 | A-001 | R-001 | LocalBridge 改造后 `node tests/parity-differential.mjs` 仍 27 PASS | 测试输出 | pending |
-| A-002 | R-001 | `npm test` 8 套仍全绿 | npm test exit 0 | pending |
+| A-002 | R-001 | `npm test` 9 套仍全绿 | npm test exit 0 | pending |
 | A-003 | R-002 | `NORMIFY_TRANSPORT=http` 起 server，`tools/list` 返 31；`=stdio` 仍工作 | spawn + NDJSON/HTTP | pending |
 | A-004 | R-003 | 两并发 session companion 互不干扰；DSH vs HTTP parity 文件集一致 + .md normalize 逐字节一致 | 隔离测试 + parity HTTP 变体 | pending |
 | A-005 | R-004 | pi 瘦客户端连 HTTP server，31 工具 + call ok | headless 模拟日志 | pending |
@@ -99,16 +99,14 @@
 
 ## Readiness gaps
 
-- **依赖 `session-isolation` complete**——本 Action 不能在 session-isolation 之前 ready/execute。
-- R3 推送协议形状（§9 / §14）：HTTP endpoint vs MCP method——倾向 MCP method，DP4 review 定。
-- SessionCacheBridge 缓存粒度/失效——DP4 设计。
-- pi 瘦客户端 MCP SDK 依赖解析（pi 加载 .ts）——DP3 验证。
-- 设计文档已写（§7–§10），未经 review；Readiness review 需核验：依赖声明、Bridge 注入面、transport 选择、R3 协议、companion split 是否完整。
+无（ready 授权后）。Readiness review 3 轮（K=3 收敛 → `pass`）：
+- R1：1 low（A-002/R-001/Validation/Closure 中“8 套” stale，session-isolation 加了第 9 套）→ auto-fixed 8→9；depends-on gap 标 resolved（session-isolation 2026-09-25 complete）；Bridge 注入面经代码核验完整（`fingerprintOf`/`gitHead`/`gitChangedFiles` + sync 内联 `existsSync` L913/914/934，`validateProject`/`buildProject` 不碰 repoRoot fs）。
+- R2/R3：0 critical/high/medium；HTTP session 生命周期、parity HTTP 变体、pushSnapshot MCP 自定义 method（R-007 SHOULD + fallback）、SessionCacheBridge 缓存失效、sync→async filter 重构、HTTP port config 均为显式 flag 的 DP 阶段执行细节（由对应 acceptance 兑底），非 readiness blocker。
 
 ## Closure conditions
 
 - 全部 MUST 验收（A-001~A-009）passed；R-007 SHOULD 满足或显式豁免。
-- parity（LocalBridge + HTTP 变体）全绿；8 套 npm test 不破坏；ci-contract 绿。
+- parity（LocalBridge + HTTP 变体）全绿；9 套 npm test 不破坏；ci-contract 绿。
 - 两并发 session 隔离验证通过（复用 session-isolation 抽象）。
 - 持久结论回流：SETUP.md dual-side 节 + §9 Q8/Q9。
 - 状态、路径、导航、归档一致。
