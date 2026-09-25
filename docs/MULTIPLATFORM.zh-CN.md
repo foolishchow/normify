@@ -107,7 +107,7 @@ const register = <A>(key, def, execute) => {
 
 **协议选型**：官方 `@modelcontextprotocol/sdk`（TS，社区主流，跟协议演进）。
 
-**入口**：`mcp/server.ts`（编译到 `lib/mcp/server.js`），stdio transport。
+**入口**：`src/mcp/server.ts`（编译到 `lib/mcp/server.js`），stdio transport。
 
 **职责**：
 - `tools/list`：遍历 `buildCatalog(env)`，映射成 `{ name, description, inputSchema }`（normify 的 `ObjectSchema` 本就是 JSON Schema，几乎零转换）。
@@ -246,7 +246,7 @@ MUST：阈值 `devCompanionReminderAfter` 从 pi settings 读（缺省 8）；�
 | 步 | 内容 | 验收 | 风险 |
 | --- | --- | --- | --- |
 | **S0** | 抽 `src/catalog.ts`：`buildCatalog(env): ToolEntry[]`；`src/tools.ts` 的 `registerTools` 退化为遍历 catalog | DSH e2e 5 套全 PASS；`tsc --noEmit` 0 错；`ci-contract-check.cjs` 通过 | 零（DSH 行为不变） |
-| **S1** | 加 `mcp/server.ts` + `@modelcontextprotocol/sdk` 依赖；实现 `tools/list` + `tools/call` | 新增 `tests/mcp-smoke.mjs`：启动 server，列出 31 个工具，call 一个只读工具断言返回 | 低 |
+| **S1** | 加 `src/mcp/server.ts` + `@modelcontextprotocol/sdk` 依赖；实现 `tools/list` + `tools/call` | 新增 `tests/mcp-smoke.mjs`：启动 server，列出 31 个工具，call 一个只读工具断言返回 | 低 |
 | **S2** | behavior → MCP annotations 映射；错误载荷映射 | smoke test 覆盖 readOnly/destructive 标记与一个 error 路径 | 低 |
 | **S3** | 加 `pi-extension/normify.ts`；JSON Schema → typebox 投影（含 `StringEnum`） | 手动加载到 pi，`/reload` 后 31 个工具可见；call 一个工具 | 低 |
 | **S4** | 复用 SKILL.md：写各宿主放置说明（新增 `docs/MULTIPLATFORM-SETUP.md`） | 文档审查 | 零 |
@@ -272,7 +272,7 @@ MUST：阈值 `devCompanionReminderAfter` 从 pi settings 读（缺省 8）；�
 ## 9. 待对齐的开放问题
 
 1. **S0 的 catalog 文件位置** ✅ resolved：放 `src/catalog.ts`（与 `tools.ts` 同级，非 `src/engine/catalog.ts`）——catalog 依赖 engine 但不是 engine 的一部分。决断由 `catalog-extraction` Action 作出并验证（8 条验收全过，见 `docs/actions/_archive/complete/catalog-extraction/README.md`）。
-2. **MCP server 入口产物路径**：`lib/mcp/server.js` 还是顶层 `mcp/server.js`（独立 tsconfig）？倾向 `lib/mcp/server.js`（复用现有 tsconfig，少一个构建步骤）。
+2. **MCP server 入口产物路径** ✅ resolved：`lib/mcp/server.js`（源 `src/mcp/server.ts`，复用现有 tsconfig，少一个构建步骤）。决断由 `mcp-server` Action 作出并验证（9 条验收全过，见 `docs/actions/_archive/complete/mcp-server/README.md`）。
 3. **pi extension 是否进本仓库**：进 `pi-extension/` 源码目录（编译到 `lib/pi/`），还是单独维护？倾向进本仓库，便于和 catalog 同步演进。
 4. **JSON Schema → typebox 投影**：手写一个 `jsonSchemaToTypebox()` 工具函数，还是为每个工具手写 typebox 定义？倾向手写投影函数（catalog 是单一事实源，避免双份定义漂移）。
 

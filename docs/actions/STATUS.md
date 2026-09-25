@@ -33,3 +33,4 @@ _（无活跃 Action。）_
 | Action | Status | Path | Summary | Updated |
 | --- | --- | --- | --- | --- |
 | `catalog-extraction` | `complete` | [README](_archive/complete/catalog-extraction/README.md) | 抽出平台无关的 `src/catalog.ts`，`tools.ts` 退化为 DSH 适配器，DSH 行为零回归。8 条验收全过，§9 Q1 已回流。 | 2026-09-25 |
+| `mcp-server` | `complete` | [README](_archive/complete/mcp-server/README.md) | 加 `src/mcp/server.ts`（MCP stdio server，`tools/list`+`tools/call` 复用 catalog），证明目录跨平台可复用。9 条验收全过，§9 Q2 已回流。 | 2026-09-25 |
