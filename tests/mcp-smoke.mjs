@@ -76,17 +76,35 @@ try {
     assert(names.includes('normify_module_batch'), '③c 含 normify_module_batch');
     assert(names.includes('normify_project_init'), '③d 含 normify_project_init');
     assert(list.tools.every(t => t.inputSchema && t.inputSchema.type === 'object'), '③e 每个工具 inputSchema 带 type:object');
+    // A-001/A-006: §3.1 annotations 三映射（read→readOnlyHint:true、write→readOnlyHint:false、destroy→destructiveHint:true）
+    const byName = Object.fromEntries(list.tools.map(t => [t.name, t]));
+    assert(byName['normify_help']?.annotations?.readOnlyHint === true, '③f normify_help(read) annotations.readOnlyHint===true');
+    assert(byName['normify_module_upsert']?.annotations?.readOnlyHint === false, '③g normify_module_upsert(write) annotations.readOnlyHint===false');
+    assert(byName['normify_module_delete']?.annotations?.destructiveHint === true, '③h normify_module_delete(destroy) annotations.destructiveHint===true');
 
     // ④ tools/call normify_help {topic:'tools'}（只读、纯——不触 fs/requireBilingual）
     const call = await send('tools/call', { name: 'normify_help', arguments: { topic: 'tools' } });
     assert(call.isError === false, '④ call normify_help(topic=tools) → isError===false');
     assert(call.content && call.content.length > 0 && typeof call.content[0].text === 'string' && call.content[0].text.length > 0, '④b content[0].text 非空');
+    // A-003: 成功路径 content 不变（JSON.stringify 的 {ok:true,...}，以 { 开头）
+    assert(call.content[0].text.startsWith('{'), '④c 成功路径 content 以 { 开头（JSON，非 errorText）');
 
     // ⑤ tools/call 未知工具 'nope'
     const unk = await send('tools/call', { name: 'nope', arguments: {} });
     assert(unk.isError === true, '⑤ call 未知工具 nope → isError===true');
 
-    console.log('=== 结果：全部 PASS（' + PASS.length + ' 项）===');
+    // ⑥ tools/call normify_help {topic:'nope'}（A-002/A-007：简单错误→模型可读 [code] message）
+    const err = await send('tools/call', { name: 'normify_help', arguments: { topic: 'nope' } });
+    assert(err.isError === true, '⑥ call normify_help(topic=nope) → isError===true');
+    assert(typeof err.content?.[0]?.text === 'string' && err.content[0].text.startsWith('[args/invalid-topic]'), '⑥b content 以 [args/invalid-topic] 开头（模型可读，非裸 JSON）');
+    assert(!err.content[0].text.startsWith('{'), '⑥c content 不以 { 开头（非裸 JSON）');
+
+    // A-008（SHOULD）豁免：富错误形状（{errors[],summary}）须经含 malformed module 的 fs-fixture 项目触发
+    //   （normify_validate/build/batch 等富错误工具均触 fs；无 hermetic 纯触发路径，G-002 允许降代码审查）。
+    //   errorText 富分支经代码审查 + 简单错误路径 A-002 兑底（isError→errorText→[code] message 机制同构）。
+    console.log('SKIP  A-008 富错误 fs-fixture：豁免（G-002，无 hermetic 触发路径，代码审查 + A-002 兑底）');
+
+    console.log('=== 结果：全部 PASS（' + PASS.length + ' 项，A-008 豁免）===');
 } finally {
     if (timer) clearTimeout(timer);
     child.kill('SIGTERM');
