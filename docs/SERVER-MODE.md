@@ -96,7 +96,9 @@ S0–S6 的 27 PASS（parity）+ 8 套 npm test + companion-snapshot 全用 `roo
 - 无 token（stdio 默认）= default user + 全项目可见（向后兼容，本地开发不挡）。
 - **路径 arg 逃逸防护与 auth 绑定**：userScope 给定（= 有 token = auth 开）时，`root`/`dir` 必须落 `rootDir/<userScope>/` 内（堵路径遍历跨用户）；userScope undefined（无 token）时 args 不限（向后兼容）。
 
-## 6. session-isolation Action 范围（前置）
+## 6. session-isolation Action 范围（前置）　✅ 已完成
+
+> 实施完成（2026-09-25）：`src/session.ts`（SessionManager/SessionState/parseAuthConfig/resolveSessionAuth/createSessionState）+ `ToolEnv.userScope?/projectAllowlist?` + `resolveProject` 第 4 参 userScope + `assertWithinScope`（先于 dir-name 校验）+ `listProjects(rootDir, userScope?)` + `src/mcp/server.ts` 经 SessionManager 取 per-session catalog/companionCount。`tests/session-isolation.mjs` 13 PASS。`npm test` 9 套全绿 + parity 27 PASS + ci-contract 绿。阻塞解除：`dual-side-mode` 可复用本抽象。
 
 | 项 | 内容 |
 | --- | --- |
@@ -106,7 +108,7 @@ S0–S6 的 27 PASS（parity）+ 8 套 npm test + companion-snapshot 全用 `roo
 | 项目隔离 | 文档化（已支持） |
 | auth 脚手架 | token → userId + project allowlist（无 token = default + 全可见） |
 | transport | **仅 stdio**（1 session 验证抽象）；HTTP 在 dual-side-mode |
-| 向后兼容 | 无 token 路径不变；27 PASS + 8 套 npm test 全绿 |
+| 向后兼容 | 无 token 路径不变；27 PASS + 9 套 npm test 全绿（含 session-isolation 13） |
 
 ## 7. Bridge 抽象（dual-side-mode，依赖 session-isolation）
 

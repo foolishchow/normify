@@ -1,6 +1,10 @@
 export interface ToolEnv {
     rootDir: string;
     requireBilingual: boolean;
+    /** session-isolation：用户图隔离维度。undefined=default user（向后兼容，路径 rootDir/normify-<slug>/）。给定则路径 rootDir/<userScope>/normify-<slug>/。 */
+    userScope?: string;
+    /** session-isolation：auth 项目 allowlist。undefined=全可见（无 auth）。给定则 project slug 必须在列。 */
+    projectAllowlist?: string[];
 }
 /** JSON Schema 节点（作者态：属性级内联 required: true；编译后对象级为 required: string[]）。 */
 export interface SchemaNode {

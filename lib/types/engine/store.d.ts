@@ -14,8 +14,8 @@ export declare function resolveProject(rootDir: string, args: {
     dir?: string;
 }, opts?: {
     create?: boolean;
-}): Promise<ProjectRef>;
-export declare function listProjects(rootDir: string): ProjectRef[];
+}, userScope?: string): Promise<ProjectRef>;
+export declare function listProjects(rootDir: string, userScope?: string): ProjectRef[];
 export declare function listModuleFiles(projectDir: string): Promise<string[]>;
 /** 找模块现有文件（容器 index.md 优先，其次叶子 x.md）。 */
 export declare function findModuleFile(projectDir: string, id: string): string | null;

@@ -23,6 +23,10 @@ import type { ChangeModules, ChangeStatus, Diagnostic, LayoutData, LayoutEdgeHin
 export interface ToolEnv {
     rootDir: string;
     requireBilingual: boolean;
+    /** session-isolation：用户图隔离维度。undefined=default user（向后兼容，路径 rootDir/normify-<slug>/）。给定则路径 rootDir/<userScope>/normify-<slug>/。 */
+    userScope?: string;
+    /** session-isolation：auth 项目 allowlist。undefined=全可见（无 auth）。给定则 project slug 必须在列。 */
+    projectAllowlist?: string[];
 }
 
 /** JSON Schema 节点（作者态：属性级内联 required: true；编译后对象级为 required: string[]）。 */
@@ -591,7 +595,15 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         };
         catalog.push({ name: key, description: def.description, behavior, parameters: def.parameters!, execute: wrapped });
     };
-    const resolve = (args: ProjectArgs, create = false): Promise<ProjectRef> => resolveProject(env.rootDir, { project: args.project, dir: args.dir }, { create });
+    const resolve = (args: ProjectArgs, create = false): Promise<ProjectRef> => {
+        // session-isolation：auth allowlist 校验（userScope 给定即 auth 开；project 作 slug 时校验在列）
+        if (env.userScope !== undefined && env.projectAllowlist !== undefined && args.project && !/[\/\\:]/.test(args.project)) {
+            if (!env.projectAllowlist.includes(args.project)) {
+                throw new NormifyError('session/project-not-allowed', '项目不在授权 allowlist：' + args.project + '（user=' + env.userScope + '）');
+            }
+        }
+        return resolveProject(env.rootDir, { project: args.project, dir: args.dir }, { create }, env.userScope);
+    };
     register('normify_tree_list', {
         description: '列出全部结构数据项目（normify-* 目录，含每棵树的根与仓库）。',
         behavior: 'read',
@@ -600,7 +612,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         }),
     }, async (args: TreeListArgs) => {
         const rootDir = typeof args.root === 'string' && args.root.trim() !== '' ? args.root : env.rootDir;
-        const projects: ProjectRef[] = listProjects(rootDir);
+        const projects: ProjectRef[] = listProjects(rootDir, env.userScope);
         const out: TreeListRow[] = [];
         for (const p of projects) {
             const roots: ModuleFile[] = (await loadAllModules(p.dir)).files.filter(f => f.module.parent === null);

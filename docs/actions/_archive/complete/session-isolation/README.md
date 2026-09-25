@@ -1,10 +1,10 @@
 # Session Isolation
 
 - Action: `session-isolation`
-- Status: `ready`
+- Status: `complete`
 - Updated: 2026-09-25
-- Status authority: [Action Status](../STATUS.md)
-- Design source: [Dual-Side Mode 设计 §3–§6](../../SERVER-MODE.md)
+- Status authority: [Action Status](../../../STATUS.md)
+- Design source: [Dual-Side Mode 设计 §3–§6](../../../../SERVER-MODE.md)
 - Blocks: `dual-side-mode`（dual-side 的 HTTP 多 session 复用本 Action 的 Session 抽象）
 
 ## Background
@@ -80,25 +80,31 @@ dual-side mode（多 agent 连同一 server）的前置地基：先把"会话/�
 
 | ID | Requirement | Observable condition | Planned evidence | Status |
 | --- | --- | --- | --- | --- |
-| A-001 | R-001 | `SessionManager.get(sessionId)` 返 SessionState；stdio 启动后存在 1 session | 代码 + 启动日志 | pending |
-| A-002 | R-002 | companion 计数从 SessionState 取（非模块作用域）；stdio 1 session 触发行为与改前一致 | companion-snapshot + 行为对比 | pending |
-| A-003 | R-003 | `resolveProject` userScope：undefined → `rootDir/normify-<slug>/`；"x" → `rootDir/x/normify-<slug>/` | 路径单测 | pending |
-| A-003b | R-003 | `listProjects` userScope：undefined → `rootDir/normify-*`；"x" → `rootDir/x/normify-*`（不含其他用户项目） | 路径单测 | pending |
-| A-003c | R-003 | 路径 arg 逃逸防护：userScope 给定时 `dir=/etc/passwd`/`dir=../bob/...` 拒绝；`dir=normify-x`（相对、scope 内）ok；userScope undefined 时 args 不限 | 逃逸单测 | pending |
-| A-004 | R-004 | 两个 userScope 不同的 catalog 各自解析到不同图路径（互不可见） | 双 session 路径断言 | pending |
-| A-005 | R-005 | 无 token=default+全可见；有 token=userScope+allowlist 校验（越权 project 被拒） | auth 单测 | pending |
-| A-006 | R-006 | `node tests/parity-differential.mjs` 27 PASS；`npm test` 8 套绿；`node ci-contract-check.cjs` 绿 | 测试输出 | pending |
-| A-007 | R-007 | session 过期/清理钩子存在（TTL 或 onclose） | 代码审查 | pending |
+| A-001 | R-001 | `SessionManager.get(sessionId)` 返 SessionState；stdio 启动后存在 1 session | `src/session.ts` + `tests/session-isolation.mjs` A-001 | ✅ passed |
+| A-002 | R-002 | companion 计数从 SessionState 取（非模块作用域）；stdio 1 session 触发行为与改前一致 | `tests/mcp-smoke.mjs` 36 PASS + `tests/companion-snapshot.mjs` 3 PASS | ✅ passed |
+| A-003 | R-003 | `resolveProject` userScope：undefined → `rootDir/normify-<slug>/`；"x" → `rootDir/x/normify-<slug>/` | `tests/session-isolation.mjs` A-003 | ✅ passed |
+| A-003b | R-003 | `listProjects` userScope：undefined → `rootDir/normify-*`；"x" → `rootDir/x/normify-*`（不含其他用户项目） | `tests/session-isolation.mjs` A-003b | ✅ passed |
+| A-003c | R-003 | 路径 arg 逃逸防护：userScope 给定时 `dir=/etc/passwd`/`dir=../bob/...` 拒绝；`dir=normify-x`（相对、scope 内）ok；userScope undefined 时 args 不限 | `tests/session-isolation.mjs` A-003c×3 | ✅ passed |
+| A-004 | R-004 | 两个 userScope 不同的 catalog 各自解析到不同图路径（互不可见） | `tests/session-isolation.mjs` A-004 | ✅ passed |
+| A-005 | R-005 | 无 token=default+全可见；有 token=userScope+allowlist 校验（越权 project 被拒） | `tests/session-isolation.mjs` A-005×4 | ✅ passed |
+| A-006 | R-006 | `node tests/parity-differential.mjs` 27 PASS；`npm test` 9 套绿；`node ci-contract-check.cjs` 绿 | 测试输出 | ✅ passed |
+| A-007 | R-007 | session 过期/清理钩子存在（TTL 或 onclose） | `SessionManager.setOnclose`+`delete`（A-007 单测） | ✅ passed |
 
 ## Validation
 
-记录计划命令（与实际执行分离）：
+实际执行（全过）：
 
-- SP1：`node lib/mcp/server.js`（stdio）+ NDJSON initialize/tools-list/tools-call 仍工作。
-- SP2：`node tests/parity-differential.mjs`（27 PASS，路径不变）+ 路径单测（userScope undefined vs "x"）。
-- SP3：`node tests/companion-snapshot.mjs`（3 PASS）+ companion 触发行为对比。
-- SP4：auth 单测（token 解析 + allowlist 校验 + 无 token default）。
-- 全程：`npm test`（8 套）+ `node ci-contract-check.cjs`。
+- `npx tsc --noEmit`：0 error。
+- `npm test`：9 套全绿（新增 `tests/session-isolation.mjs` 13 PASS；原 8 套保持：engine-e2e/companion-e2e/regression×3/mcp-smoke 36/pi-projection 36/companion-snapshot 3）。
+- `node tests/parity-differential.mjs`：27 PASS（DSH-direct vs MCP-via-protocol 等价，路径不变）。
+- `node ci-contract-check.cjs`：绿（工具数 31 + bundle 契约不变）。
+- `node tests/session-isolation.mjs`：13 PASS（A-001/A-003/A-003b/A-003c×3/A-004/A-005×4/A-007）。
+
+实施记录：
+- `src/session.ts`（新，106 行）：`SessionManager` + `SessionState` + `parseAuthConfig` + `resolveSessionAuth` + `createSessionState` + `STDIO_SESSION_ID`。
+- `src/catalog.ts`：`ToolEnv` 加 `userScope?`/`projectAllowlist?`；resolve 闭包传 `env.userScope` + allowlist 校验（`session/project-not-allowed`）；tree_list 传 `env.userScope`。
+- `src/engine/store.ts`：`resolveProject` 加第 4 参 `userScope?`（effectiveRoot = `rootDir/[<userScope>/]`）+ `assertWithinScope`（先于 dir-name 校验，安全边界优先）；`listProjects(rootDir, userScope?)`。
+- `src/mcp/server.ts`：模块作用域 `env`/`catalog`/`companionConfig`/`companionCount` → `SessionManager`（stdio create 1 session，handler 经 `sessionManager.get(STDIO_SESSION_ID)` 取 catalog/companionCount）。
 
 ## Readiness gaps
 

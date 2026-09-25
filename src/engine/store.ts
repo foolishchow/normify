@@ -24,8 +24,17 @@ export interface ProjectRef {
     slug: string;
 }
 /** 解析结构数据目录：dir 显式给出，或 normify-<project> 落在 rootDir 下。create=true 时自动创建空项目目录（仅写工具使用）。 */
-export async function resolveProject(rootDir: string, args: { project?: string; dir?: string }, opts: { create?: boolean } = {}): Promise<ProjectRef> {
-    const root = resolve(rootDir);
+export async function resolveProject(rootDir: string, args: { project?: string; dir?: string }, opts: { create?: boolean } = {}, userScope?: string): Promise<ProjectRef> {
+    const root = userScope !== undefined ? resolve(resolve(rootDir), userScope) : resolve(rootDir);
+    // session-isolation 路径 arg 逃逸防护（F-002）：userScope 给定即 auth 开，解析后路径必须落 effectiveRoot 内。
+    // 相对 path 自然落 root（effectiveRoot）内；绝对路径 / `..` 遍历越界 → 拒绝。userScope undefined 时不限（向后兼容）。
+    // 先于 dir-name 校验（安全边界优先于命名约束）。
+    const assertWithinScope = (p: string): void => {
+        if (userScope === undefined) return;
+        if (p !== root && !(p + sep).startsWith(root + sep)) {
+            throw new NormifyError('session/path-escape', '路径越界 userScope：' + p + '（允许范围：' + root + '）');
+        }
+    };
     const ensureModules = async (p: string): Promise<void> => {
         if (!existsSync(join(p, 'modules'))) {
             if (opts.create) {
@@ -40,6 +49,7 @@ export async function resolveProject(rootDir: string, args: { project?: string; 
     };
     if (args.dir !== undefined && args.dir.trim() !== '') {
         const p = resolve(root, args.dir);
+        assertWithinScope(p);
         const base = p.split(sep).pop() ?? '';
         if (!base.startsWith(PROJECT_PREFIX)) {
             throw new NormifyError('project/dir-name', '结构数据目录名必须以 ' + PROJECT_PREFIX + ' 开头，如 normify-demo-repo（实际: ' + base + '）');
@@ -51,6 +61,7 @@ export async function resolveProject(rootDir: string, args: { project?: string; 
         // 兼容误传：project 含路径特征（斜杠/盘符）时按目录处理
         if (/[\/\\:]/.test(args.project)) {
             const p = resolve(root, args.project);
+            assertWithinScope(p);
             const base = p.split(sep).pop() ?? '';
             if (!base.startsWith(PROJECT_PREFIX)) {
                 throw new NormifyError('project/dir-name', '结构数据目录名必须以 ' + PROJECT_PREFIX + ' 开头，如 normify-demo-repo（实际: ' + base + '）');
@@ -65,8 +76,8 @@ export async function resolveProject(rootDir: string, args: { project?: string; 
     }
     throw new NormifyError('project/required', '必须提供 project（项目 slug）或 dir（结构数据目录绝对路径）');
 }
-export function listProjects(rootDir: string): ProjectRef[] {
-    const root = resolve(rootDir);
+export function listProjects(rootDir: string, userScope?: string): ProjectRef[] {
+    const root = userScope !== undefined ? resolve(resolve(rootDir), userScope) : resolve(rootDir);
     let entries: string[] = [];
     try {
         entries = readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name);
