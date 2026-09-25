@@ -28,7 +28,7 @@
 
 | Action | Status | Path | Summary | Updated |
 | --- | --- | --- | --- | --- |
-| `session-isolation` | `draft` | [README](session-isolation/README.md) | dual-side 前置地基：统一 Session 抽象（SessionManager/SessionState，stdio 1/http N 同形状）+ per-user 图隔离（模型 i，路径 `rootDir/[<userId>/]normify-<slug>/`）+ companion 模块作用域 bug 修复→per-session + auth 脚手架（token→userId+allowlist）。仅 stdio 验证。向后兼容硬约束：无 token 路径不变，27 PASS+8 套绿。阻塞 `dual-side-mode`。设计见 [SERVER-MODE.md §3–§6](../../SERVER-MODE.md)。 | 2026-09-25 |
+| `session-isolation` | `ready` | [README](session-isolation/README.md) | dual-side 前置地基：统一 Session 抽象（SessionManager/SessionState，stdio 1/http N 同形状）+ per-user 图隔离（模型 i，路径 `rootDir/[<userId>/]normify-<slug>/`）+ companion 模块作用域 bug 修复→per-session + auth 脚手架（token→userId+allowlist）+ 路径 arg 逃逸防护（`session/path-escape`）。仅 stdio 验证。向后兼容硬约束：无 token 路径不变，27 PASS+8 套绿。阻塞 `dual-side-mode`。设计见 [SERVER-MODE.md §3–§6](../../SERVER-MODE.md)。 | 2026-09-25 |
 | `dual-side-mode` | `draft` | [README](dual-side-mode/README.md) | normify server-side 长驻服务（MCP HTTP + Bridge 抽象 repoRoot），多 agent 共享单一 catalog/engine。depends-on `session-isolation`。DP1–DP5：Bridge→HTTP transport（多 session 复用前置抽象）→pi 瘦客户端→SessionCacheBridge R3 推送→部署文档。设计见 [SERVER-MODE.md §7–§10](../../SERVER-MODE.md)。 | 2026-09-25 |
 
 ## Archive

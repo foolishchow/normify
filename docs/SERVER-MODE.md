@@ -72,8 +72,10 @@ interface SessionState {
 - `resolveProject(rootDir, args, opts, userScope)`：
   - userScope undefined → `rootDir/normify-<slug>/`（或 `rootDir/<dir>` 若 args.dir 给）——**路径不变，向后兼容**。
   - userScope = "alice" → `rootDir/alice/normify-<slug>/`。
+- `listProjects(rootDir, userScope?)`：userScope 给定读 `rootDir/<userScope>/normify-*`（不泄漏其他用户项目）；undefined 读 `rootDir/normify-*`（向后兼容）。
 - `buildCatalog(env)` 的 `resolve` 闭包捕获 `env.userScope`；每 session 用自己的 userScope 重建 catalog（catalog 构建廉价，N session × catalog 可接受）。
 - userScope 来源：SessionState.userId（token 解析）；default session（无 token）= undefined。
+- **路径 arg 逃逸防护**（userScope 给定即 auth 开）：工具 args `root`（tree_list）/`dir`（resolveProject）经 resolve 后校验落在 `rootDir/<userScope>/` 内；绝对路径或 `..` 遍历越界 → 拒绝（`session/path-escape`）。堵 F-002。userScope undefined（无 auth）时 args 不限（向后兼容）。
 
 ### 4.3 向后兼容（硬约束）
 
@@ -92,6 +94,7 @@ S0–S6 的 27 PASS（parity）+ 8 套 npm test + companion-snapshot 全用 `roo
 - `NORMIFY_SERVER_TOKEN` 或 token 配置 → 解析 `userId` + 该 token 可访问的 project slug 集合。
 - per-request：client 带 token + project；server 校验 token→userId + allowlist 含 project。
 - 无 token（stdio 默认）= default user + 全项目可见（向后兼容，本地开发不挡）。
+- **路径 arg 逃逸防护与 auth 绑定**：userScope 给定（= 有 token = auth 开）时，`root`/`dir` 必须落 `rootDir/<userScope>/` 内（堵路径遍历跨用户）；userScope undefined（无 token）时 args 不限（向后兼容）。
 
 ## 6. session-isolation Action 范围（前置）
 
