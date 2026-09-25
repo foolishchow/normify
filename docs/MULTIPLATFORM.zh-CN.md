@@ -252,7 +252,7 @@ MUST：阈值 `NORMIFY_DEV_COMPANION_REMINDER_AFTER` 从 env 变量读（缺省 
 | **S3** | 加 `src/pi/normify.ts`；JSON Schema → typebox 投影（含 `StringEnum`）+ formatResultText | 手动加载到 pi（软链 .ts），`/reload` 后 31 个工具可见；call 一个工具 | 低 ✅ |
 | **S4** | 复用 SKILL.md：写各宿主放置说明（新增 `docs/MULTIPLATFORM-SETUP.md`） | 文档审查 | 零 |
 | **S5** | 迁移 companion 钩子：MCP server 内计数器 + pi `tool_result` 事件 | 单测：连续 N 次写工具后返回含 reminder | 低 |
-| **S6** | CI 扩展：`ci-contract-check.cjs` 同时查 catalog；加 `tests/mcp-smoke.mjs` 进 `npm test` | CI 全绿 | 低 |
+| **S6** | CI 扩展：`ci-contract-check.cjs` 同时查 catalog（S0 已完成）；加 `tests/mcp-smoke.mjs`/`pi-projection.mjs`/`companion-snapshot.mjs` 进 `npm test`（3 套，S3/S5 产出一并接入） | CI 全绿 | 低 ✅ 已完成（S6） |
 
 **总工作量预估**：2–3 天（S0–S6）。
 
@@ -278,6 +278,7 @@ MUST：阈值 `NORMIFY_DEV_COMPANION_REMINDER_AFTER` 从 env 变量读（缺省 
 4. **JSON Schema → typebox 投影** ✅ 已决断（S3 实施）：手写投影函数 schemaToTypebox/objectSchemaToTypebox（catalog 单一事实源，避免双份定义漂移；9 验收全过，见 `docs/actions/_archive/complete/pi-extension/README.md`）。
 5. **MCP companion 语义代理** ✅ 已决断（S5 实施）：MCP server 仅见自身 normify_* 调用，无法跨进程监听外部编辑器写；改用 `ToolEntry.behavior !== 'read'` 代理（计 normify 写/destroy/idempotent=17），语义不同于 DSH/pi（计外部 write/edit）。提醒文本保留 R-004 字节一致（不改文本，文档标注差异）。决断由 `companion-migration` Action 作出并验证。
 6. **companion 配置源** ✅ 已决断（S5 实施）：MCP/pi 经 env 变量 `NORMIFY_DEV_COMPANION_REMINDER`（`=== '1'` 默认关）/`NORMIFY_DEV_COMPANION_REMINDER_AFTER`（默认 8，NaN 守卫），与 §3.1 `NORMIFY_ROOT_DIR`/`REQUIRE_BILINGUAL` 一致；DSH 仍用 DSH Config（`devCompanionReminder`/`After`）。决断由 `companion-migration` Action 作出并验证。
+7. **S6 CI 测试接入范围** ✅ 已决断（S6 实施）：设计文档 S6 行原仅列 `mcp-smoke.mjs`，实际扩展到全 3 套（`mcp-smoke` + `pi-projection` + `companion-snapshot`），依据 S3/S5 套件已存在且独立 PASS + S6"CI 全绿"意图覆盖全部平台投影回归；该扩展经 Readiness review R1 F-001 escalate 由 user 授权（选项 a）。`npm test` 现跑 8 套（5 DSH + 3 平台投影），5 验收全过（含 `&&` 短路验证）。见 `docs/actions/_archive/complete/ci-test-integration/README.md`。
 
 ---
 
