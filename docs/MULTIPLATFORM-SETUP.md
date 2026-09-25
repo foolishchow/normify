@@ -17,6 +17,8 @@ normify 提供 3 个适配器入口（共享同一 catalog，31 个工具零逻�
 | --- | --- | --- |
 | `NORMIFY_ROOT_DIR` | `process.cwd()` | normify 结构数据项目根（含 normify-* 目录） |
 | `NORMIFY_REQUIRE_BILINGUAL` | `1`（true） | 是否强制 zh/en 双语描述；`0`=关 |
+| `NORMIFY_DEV_COMPANION_REMINDER` | `0`（关） | companion 提醒钩子开关；`1`=开 |
+| `NORMIFY_DEV_COMPANION_REMINDER_AFTER` | `8` | 触发提醒的连续写工具数 |
 
 > **DSH** 的 `rootDir`/`requireBilingual` 经 DSH Config（schemastery，`Config = z.object({rootDir, requireBilingual, ...})`）配置，**非环境变量**。MCP/pi 用上表 env 变量。
 
@@ -24,7 +26,7 @@ normify 提供 3 个适配器入口（共享同一 catalog，31 个工具零逻�
 
 - 入口：`lib/index.js`（DSH 插件，peerDeps: @deepseek-ai/cordis / @deepseek-ai/dsh-tools / @deepseek-ai/dsh-skill）
 - 安装：`npm install`（DSH 仅用 `yaml`（transitive via engine）；`@modelcontextprotocol/sdk` 供 MCP server，DSH 不用但 npm install 仍装；peerDeps 由 DSH 宿主提供，dsh-tools/dsh-skill 为 optional）
-- 配置：`rootDir`/`requireBilingual` 经 DSH Config（schemastery）配置（非 env 变量）
+- 配置：`rootDir`/`requireBilingual`/`devCompanionReminder`（默认关）/`devCompanionReminderAfter`（默认 8）经 DSH Config（schemastery）配置（非 env 变量）
 - SKILL.md：插件 `registerSkill` 自动注册（`lib/index.js` 读 `skills/normify-gen/SKILL.md`，经 `ctx.skills.register`；无需手动放置）
 - 验证：在 DSH 会话内调 `normify_help topic=tools` → 31 工具
 
@@ -37,7 +39,8 @@ normify 提供 3 个适配器入口（共享同一 catalog，31 个工具零逻�
   - Codex：`~/.codex/config.toml` `[mcp_servers.normify]`
   - Cursor：`.cursor/mcp.json`（或全局）
   - 形状（JSON，Claude Code/Cursor）：`{ "mcpServers": { "normify": { "command": "node", "args": ["<repo>/lib/mcp/server.js"], "env": { "NORMIFY_ROOT_DIR": "<project>", "NORMIFY_REQUIRE_BILINGUAL": "1" } } } }`；Codex 用 TOML `[mcp_servers.normify]` + `command`/`args`/`env` 键
-- env：宿主配置 env 传入 `NORMIFY_ROOT_DIR` / `NORMIFY_REQUIRE_BILINGUAL`（见形状 `env` 键）
+- env：宿主配置 env 传入 `NORMIFY_ROOT_DIR` / `NORMIFY_REQUIRE_BILINGUAL`（见形状 `env` 键）；可选 `NORMIFY_DEV_COMPANION_REMINDER`/`_AFTER`（companion 提醒钩子）
+- **MCP companion 语义**：MCP server 仅见自身 normify_* 工具调用，无法跨进程监听外部编辑器写；companion 改用 `behavior!=='read'` 代理（计 normify 写/destroy/idempotent），语义不同于 DSH/pi（计外部 write/edit）。提醒文本保留 R-004 字节一致。
 - SKILL.md 放置：
   - Claude Code：`~/.claude/skills/normify-gen/SKILL.md`（或 `.claude/skills/`）
   - Codex：`~/.codex/skills/normify-gen/SKILL.md`
@@ -49,7 +52,7 @@ normify 提供 3 个适配器入口（共享同一 catalog，31 个工具零逻�
 - 入口：`src/pi/normify.ts`（pi 自动发现 .ts glob，非 .js）
 - 前置：`npm install`（pi 加载 src/pi/normify.ts → catalog → engine/policy+frontmatter → `yaml`，需 repo node_modules 提供；typebox/pi-ai 由 repo devDeps 或 pi node_modules 解析）
 - 安装：软链 `src/pi/normify.ts` → `~/.pi/agent/extensions/normify.ts`（或 `pi -e ./src/pi/normify.ts`）
-- env：启动 pi 前在 shell 导出（`export NORMIFY_ROOT_DIR=<project>`；`export NORMIFY_REQUIRE_BILINGUAL=1`），或经 pi settings 配置
+- env：启动 pi 前在 shell 导出（`export NORMIFY_ROOT_DIR=<project>`；`export NORMIFY_REQUIRE_BILINGUAL=1`；可选 `export NORMIFY_DEV_COMPANION_REMINDER=1; export NORMIFY_DEV_COMPANION_REMINDER_AFTER=8`），或经 pi settings 配置
 - SKILL.md：`~/.pi/agent/skills/normify-gen/`，或 settings `"skills": ["<repo>/skills"]`
 - 验证：pi 会话 `/reload` 后调 `normify_help topic=tools` → 31 工具
 

@@ -1,6 +1,7 @@
 import type { TSchema, TObject } from 'typebox';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ToolResultEvent } from '@earendil-works/pi-coding-agent';
 import type { ObjectSchema, SchemaNode, ToolEnv } from '../catalog.js';
+import type { CompanionConfig } from '../companion.js';
 /**
  * 节点级 JSON Schema → typebox 投影（递归）。
  * 覆盖 string/number/boolean/array/object；string 上的 enum → StringEnum（前向兼容）。
@@ -25,4 +26,7 @@ export declare function formatResultText(value: unknown): string;
  * execute 转调 entry.execute（已含 missing-args + toErrorPayload，平台无关），结果经 formatResultText 入 content。
  */
 export declare function registerPiTools(pi: ExtensionAPI, env: ToolEnv): void;
+export declare function createCompanionHandler(config: CompanionConfig): (event: ToolResultEvent) => {
+    content: (import("@earendil-works/pi-ai").TextContent | import("@earendil-works/pi-ai").ImageContent)[];
+} | undefined;
 export default function (pi: ExtensionAPI): void;

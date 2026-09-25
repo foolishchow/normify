@@ -210,18 +210,19 @@ MUST：计数器与 server 生命周期绑定；server 重启清零（与 DSH �
 pi 的 `pi.on('tool_call' | 'tool_result', ...)` 事件可拦截 / 改写结果：
 
 ```ts
-pi.on('tool_result', async (event, ctx) => {
+pi.on('tool_result', (event) => {
+  // S5：handler 逻辑提取为纯函数 createCompanionHandler（sync，非 async）
   if (WRITE_TOOLS.test(event.toolName)) {
     writeCount++;
     if (writeCount >= threshold) {
       writeCount = 0;
-      // 在 event.result.content 末尾追加 reminder 文本
+      // 返回 { content: [...event.content, {type:'text', text: reminder}] }（pi L258 REPLACE，非末尾追加）
     }
   }
 });
 ```
 
-MUST：阈值 `devCompanionReminderAfter` 从 pi settings 读（缺省 8）；默认关闭（与 DSH 一致）。
+MUST：阈值 `NORMIFY_DEV_COMPANION_REMINDER_AFTER` 从 env 变量读（缺省 8，S5 决断 Q6）；默认关闭（`NORMIFY_DEV_COMPANION_REMINDER` 默认关，与 DSH 一致）。
 
 ### 5.3 DSH 入口
 
@@ -233,7 +234,7 @@ MUST：阈值 `devCompanionReminderAfter` 从 pi settings 读（缺省 8）；�
 
 1. **工具名稳定**：31 个 `normify_*` 名称 MUST 在四个入口完全一致（SKILL.md 依赖之）。`ci-contract-check.cjs` 的 `readFileSync` 路径改为 `lib/catalog.js`（原 `lib/tools.js`，见 S0 P-005），regex 不变。
 2. **参数 schema 一致**：同一 `ToolEntry.parameters` 同时喂给 DSH / MCP / typebox(pi)。MCP 的 `inputSchema` 直接用；pi 需 JSON Schema → typebox 投影（枚举用 `StringEnum`）。
-3. **`rootDir` 语义**：DSH 下默认 `.`（工作目录）；MCP 下默认 `process.cwd()`；pi 下默认 `pi.cwd`。三者语义一致（都是"当前项目根"）。
+3. **`rootDir` 语义**：DSH 下默认 `.`（工作目录）；MCP 下默认 `process.cwd()`；pi 下默认 `process.env.NORMIFY_ROOT_DIR ?? process.cwd()`（ExtensionAPI 无 cwd 字段，S3 F-006；与 MCP 同源）。三者语义一致（都是"当前项目根"）。
 4. **零容忍收尾不变**：`normify_validate` / `normify_build` / `normify_change_close` 的 0-error 门禁是引擎行为，与宿主无关，四个入口共享。
 5. **产物路径汇报**：MCP / pi 入口返回的文本里 MUST 继续带绝对路径（`normify.html` / `tree.json` 等），让各宿主的 `read`/`open` 工具能打开——原 SKILL.md 第 9 节已强调。
 
@@ -275,6 +276,8 @@ MUST：阈值 `devCompanionReminderAfter` 从 pi settings 读（缺省 8）；�
 2. **MCP server 入口产物路径** ✅ resolved：`lib/mcp/server.js`（源 `src/mcp/server.ts`，复用现有 tsconfig，少一个构建步骤）。决断由 `mcp-server` Action 作出并验证（9 条验收全过，见 `docs/actions/_archive/complete/mcp-server/README.md`）。
 3. **pi extension 是否进本仓库** ✅ 已决断（S3）：进本仓库 `src/pi/normify.ts`（复用主 tsconfig，编译到 `lib/pi/normify.js`；与 `src/mcp/` 同构）。pi 运行时加载 .ts 源（自动发现 .ts glob）。
 4. **JSON Schema → typebox 投影** ✅ 已决断（S3 实施）：手写投影函数 schemaToTypebox/objectSchemaToTypebox（catalog 单一事实源，避免双份定义漂移；9 验收全过，见 `docs/actions/_archive/complete/pi-extension/README.md`）。
+5. **MCP companion 语义代理** ✅ 已决断（S5 实施）：MCP server 仅见自身 normify_* 调用，无法跨进程监听外部编辑器写；改用 `ToolEntry.behavior !== 'read'` 代理（计 normify 写/destroy/idempotent=17），语义不同于 DSH/pi（计外部 write/edit）。提醒文本保留 R-004 字节一致（不改文本，文档标注差异）。决断由 `companion-migration` Action 作出并验证。
+6. **companion 配置源** ✅ 已决断（S5 实施）：MCP/pi 经 env 变量 `NORMIFY_DEV_COMPANION_REMINDER`（`=== '1'` 默认关）/`NORMIFY_DEV_COMPANION_REMINDER_AFTER`（默认 8，NaN 守卫），与 §3.1 `NORMIFY_ROOT_DIR`/`REQUIRE_BILINGUAL` 一致；DSH 仍用 DSH Config（`devCompanionReminder`/`After`）。决断由 `companion-migration` Action 作出并验证。
 
 ---
 
