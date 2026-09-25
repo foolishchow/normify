@@ -1,0 +1,35 @@
+# Action 状态
+
+本文档是所有正式 Action 当前状态与位置的唯一权威。
+
+## 状态模型
+
+| 状态 | 含义 |
+| --- | --- |
+| `draft` | 范围或收尾定义未完成；未授权实施。 |
+| `ready` | 需求、设计、计划、验收、验证定义充分，可执行。 |
+| `in_progress` | 已明确授权的实施或验证进行中。 |
+| `blocked` | 具体条件阻碍进展；Action 保持活跃。 |
+| `complete` | 必备验收通过、证据已记录、持久结论已回流。 |
+| `superseded` | 另一个 Action 或已接受决策取代了本工作。 |
+| `deferred` | 明确决策推迟了本工作。 |
+
+## 维护规则
+
+- 创建正式 Action 时添加且仅添加一行；初始用 `draft`。
+- 保持 Action README 状态与本表一致。
+- 状态、摘要、日期、路径、导航、归档位置作为一次连贯变更同步更新。
+- `draft` / `ready` / `in_progress` / `blocked` 置于 `docs/actions/<action-id>/` 下。
+- 终态 Action 移入对应 `_archive/` 位置。
+- 变更状态需明确授权且满足目标门禁。
+- `complete` 前需必备验收通过、实际验证证据、持久结论回流。
+
+## Actions
+
+_（无活跃 Action。）_
+
+## Archive
+
+| Action | Status | Path | Summary | Updated |
+| --- | --- | --- | --- | --- |
+| `catalog-extraction` | `complete` | [README](_archive/complete/catalog-extraction/README.md) | 抽出平台无关的 `src/catalog.ts`，`tools.ts` 退化为 DSH 适配器，DSH 行为零回归。8 条验收全过，§9 Q1 已回流。 | 2026-09-25 |

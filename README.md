@@ -481,6 +481,8 @@ node ci-contract-check.cjs   # 契约检查：bundle 声明 + 恰好 31 个工�
 | 文档 | 内容 |
 | --- | --- |
 | [`docs/SPEC.zh-CN.md`](docs/SPEC.zh-CN.md) | 正式规范 v1.0（含 v0.4.x/0.5.x 实现状态） |
+| [`docs/MULTIPLATFORM.zh-CN.md`](docs/MULTIPLATFORM.zh-CN.md) | 多平台适配设计（Claude/Codex/Cursor/pi，S0–S6 路线） |
+| [`docs/actions/`](docs/actions/) | Action 工作单元与状态（[STATUS](docs/actions/STATUS.md)） |
 | [`skills/normify-gen/SKILL.md`](skills/normify-gen/SKILL.md) | 生成器技能全文（AI 的工作手册） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录（0.1.0 → 0.5.4） |
 | [`docs/VIDEO-SCRIPT.zh-CN.md`](docs/VIDEO-SCRIPT.zh-CN.md) | **视频文字稿**（10 分钟完整版 + 60 秒速览 + 数字备忘卡 + 录制清单） |
