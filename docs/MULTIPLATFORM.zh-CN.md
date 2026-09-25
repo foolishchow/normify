@@ -142,7 +142,7 @@ const register = <A>(key, def, execute) => {
 - `promptGuidelines`：可选；从 SKILL.md 摘取关键铁律（如"0 error 强制收尾"）放进 Guidelines。
 - **文件变更队列**：工具若改结构数据文件（`module_upsert`/`batch`/`delete` 等）SHOULD 用 `withFileMutationQueue()` 参与与内置 `edit`/`write` 的同文件队列，避免并发覆盖。
 
-**env 来源**：`pi.cwd` 作为 `rootDir`；`requireBilingual` 从 pi settings 读（或缺省 `true`）。
+**env 来源**：`rootDir` 从 `process.env.NORMIFY_ROOT_DIR ?? process.cwd()` 读（ExtensionAPI 无 cwd 字段，S3 F-006）；`requireBilingual` 从 `(process.env.NORMIFY_REQUIRE_BILINGUAL ?? '1') !== '0'` 读（默认 true，与 MCP §3.1 同）。
 
 **技能放置**：把 `skills/normify-gen/` 软链或拷贝到 `~/.pi/agent/skills/`；pi 能直接读 Claude/Codex 的 skills 目录，所以也可在 settings 里 `"skills": ["<repo>/skills"]`。
 
@@ -274,7 +274,7 @@ MUST：阈值 `devCompanionReminderAfter` 从 pi settings 读（缺省 8）；�
 1. **S0 的 catalog 文件位置** ✅ resolved：放 `src/catalog.ts`（与 `tools.ts` 同级，非 `src/engine/catalog.ts`）——catalog 依赖 engine 但不是 engine 的一部分。决断由 `catalog-extraction` Action 作出并验证（8 条验收全过，见 `docs/actions/_archive/complete/catalog-extraction/README.md`）。
 2. **MCP server 入口产物路径** ✅ resolved：`lib/mcp/server.js`（源 `src/mcp/server.ts`，复用现有 tsconfig，少一个构建步骤）。决断由 `mcp-server` Action 作出并验证（9 条验收全过，见 `docs/actions/_archive/complete/mcp-server/README.md`）。
 3. **pi extension 是否进本仓库** ✅ 已决断（S3）：进本仓库 `src/pi/normify.ts`（复用主 tsconfig，编译到 `lib/pi/normify.js`；与 `src/mcp/` 同构）。pi 运行时加载 .ts 源（自动发现 .ts glob）。
-4. **JSON Schema → typebox 投影**：手写一个 `jsonSchemaToTypebox()` 工具函数，还是为每个工具手写 typebox 定义？倾向手写投影函数（catalog 是单一事实源，避免双份定义漂移）。
+4. **JSON Schema → typebox 投影** ✅ 已决断（S3 实施）：手写投影函数 schemaToTypebox/objectSchemaToTypebox（catalog 单一事实源，避免双份定义漂移；9 验收全过，见 `docs/actions/_archive/complete/pi-extension/README.md`）。
 
 ---
 

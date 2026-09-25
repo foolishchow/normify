@@ -36,3 +36,4 @@ _（无活跃 Action。）_
 | `mcp-server` | `complete` | [README](_archive/complete/mcp-server/README.md) | 加 `src/mcp/server.ts`（MCP stdio server，`tools/list`+`tools/call` 复用 catalog），证明目录跨平台可复用。9 条验收全过，§9 Q2 已回流。 | 2026-09-25 |
 | `mcp-annotations` | `complete` | [README](_archive/complete/mcp-annotations/README.md) | S2：`tools/list` 按 behavior 派生 MCP annotations + `tools/call` 错误载荷模型可读格式化。7 MUST+2 SHOULD 验收全过（A-008 豁免），无 §9 决断。 | 2026-09-25 |
 | `pi-extension` | `complete` | [README](_archive/complete/pi-extension/README.md) | S3：加 `src/pi/normify.ts`（pi 扩展，JSON Schema→typebox 投影含 StringEnum + formatResultText 错误格式化），`pi.registerTool` 复用 catalog。9 条验收全过（A-008 headless 模拟），§9 Q3 已回流。 | 2026-09-25 |
+| `setup-guide` | `complete` | [README](_archive/complete/setup-guide/README.md) | S4：新增 `docs/MULTIPLATFORM-SETUP.md`（各宿主安装指南，DSH/MCP/pi + env 区分 DSH Config）+ §9 Q4 回流 + §3.2 L145 stale 修复。纯文档零代码，6 验收全过。 | 2026-09-25 |
