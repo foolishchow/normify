@@ -132,7 +132,7 @@ const register = <A>(key, def, execute) => {
 
 ### 3.2 pi extension（覆盖 pi）
 
-**入口**：`pi-extension/normify.ts`（编译到 `lib/pi/normify.js`），放在 `~/.pi/agent/extensions/` 或 `.pi/extensions/`。
+**入口**：`src/pi/normify.ts`（编译到 `lib/pi/normify.js` 供单测+构建工件；pi 运行时加载 .ts 源——自动发现 `~/.pi/agent/extensions/*.ts` glob）。软链 `src/pi/normify.ts` 到 `~/.pi/agent/extensions/normify.ts` 或 `.pi/extensions/`。
 
 **职责**：
 - `export default function (pi: ExtensionAPI)`：遍历 `buildCatalog(env)`，对每个 entry 调 `pi.registerTool({...})`。
@@ -248,7 +248,7 @@ MUST：阈值 `devCompanionReminderAfter` 从 pi settings 读（缺省 8）；�
 | **S0** | 抽 `src/catalog.ts`：`buildCatalog(env): ToolEntry[]`；`src/tools.ts` 的 `registerTools` 退化为遍历 catalog | DSH e2e 5 套全 PASS；`tsc --noEmit` 0 错；`ci-contract-check.cjs` 通过 | 零（DSH 行为不变） |
 | **S1** | 加 `src/mcp/server.ts` + `@modelcontextprotocol/sdk` 依赖；实现 `tools/list` + `tools/call` | 新增 `tests/mcp-smoke.mjs`：启动 server，列出 31 个工具，call 一个只读工具断言返回 | 低 |
 | **S2** | behavior → MCP annotations 映射；错误载荷映射 | smoke test 覆盖 readOnly/destructive 标记与一个 error 路径 | 低 |
-| **S3** | 加 `pi-extension/normify.ts`；JSON Schema → typebox 投影（含 `StringEnum`） | 手动加载到 pi，`/reload` 后 31 个工具可见；call 一个工具 | 低 |
+| **S3** | 加 `src/pi/normify.ts`；JSON Schema → typebox 投影（含 `StringEnum`）+ formatResultText | 手动加载到 pi（软链 .ts），`/reload` 后 31 个工具可见；call 一个工具 | 低 ✅ |
 | **S4** | 复用 SKILL.md：写各宿主放置说明（新增 `docs/MULTIPLATFORM-SETUP.md`） | 文档审查 | 零 |
 | **S5** | 迁移 companion 钩子：MCP server 内计数器 + pi `tool_result` 事件 | 单测：连续 N 次写工具后返回含 reminder | 低 |
 | **S6** | CI 扩展：`ci-contract-check.cjs` 同时查 catalog；加 `tests/mcp-smoke.mjs` 进 `npm test` | CI 全绿 | 低 |
@@ -273,7 +273,7 @@ MUST：阈值 `devCompanionReminderAfter` 从 pi settings 读（缺省 8）；�
 
 1. **S0 的 catalog 文件位置** ✅ resolved：放 `src/catalog.ts`（与 `tools.ts` 同级，非 `src/engine/catalog.ts`）——catalog 依赖 engine 但不是 engine 的一部分。决断由 `catalog-extraction` Action 作出并验证（8 条验收全过，见 `docs/actions/_archive/complete/catalog-extraction/README.md`）。
 2. **MCP server 入口产物路径** ✅ resolved：`lib/mcp/server.js`（源 `src/mcp/server.ts`，复用现有 tsconfig，少一个构建步骤）。决断由 `mcp-server` Action 作出并验证（9 条验收全过，见 `docs/actions/_archive/complete/mcp-server/README.md`）。
-3. **pi extension 是否进本仓库**：进 `pi-extension/` 源码目录（编译到 `lib/pi/`），还是单独维护？倾向进本仓库，便于和 catalog 同步演进。
+3. **pi extension 是否进本仓库** ✅ 已决断（S3）：进本仓库 `src/pi/normify.ts`（复用主 tsconfig，编译到 `lib/pi/normify.js`；与 `src/mcp/` 同构）。pi 运行时加载 .ts 源（自动发现 .ts glob）。
 4. **JSON Schema → typebox 投影**：手写一个 `jsonSchemaToTypebox()` 工具函数，还是为每个工具手写 typebox 定义？倾向手写投影函数（catalog 是单一事实源，避免双份定义漂移）。
 
 ---
