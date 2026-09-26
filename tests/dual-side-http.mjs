@@ -88,7 +88,7 @@ await (async () => {
     await T('parity DSH-direct vs HTTP-MCP store 等价', async () => {
         // DSH-direct 路径：in-process buildCatalog + execute
         const rootDsh = mkdtempSync(join(tmpdir(), 'normify-dsh-'));
-        const cat = buildCatalog({ rootDir: rootDsh, requireBilingual: true });
+        const cat = buildCatalog({}, { rootDir: rootDsh }, { requireBilingual: true });
         const r1 = await cat.find(e => e.name === 'normify_project_init').execute({ project: 'parity' });
         eq(r1.ok, true);
         await cat.find(e => e.name === 'normify_module_upsert').execute({ project: 'parity', frontmatter: { id: 'm1', name: { zh: 'M1' }, description: { zh: 'd' }, state: 'planned', fingerprint: 'pending', source: [] } });

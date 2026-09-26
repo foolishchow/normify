@@ -24,7 +24,7 @@ export const Config = z.object({
     devCompanionReminderAfter: z.number().default(8),
 });
 export function apply(ctx: Context, config: Config): void {
-    registerTools(ctx, { rootDir: config.rootDir, requireBilingual: config.requireBilingual });
+    registerTools(ctx, { rootDir: config.rootDir }, { requireBilingual: config.requireBilingual });
     installCompanionReminder(ctx, config);
     const skillRegistered = registerSkill(ctx);
     const message = '[normify] dsh-normify 0.5.4 已加载：31 个 normify_* 工具' +

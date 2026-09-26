@@ -1,6 +1,6 @@
 // pi 扩展适配器：把 normify catalog 暴露给 @earendil-works/pi-coding-agent。
 // 平台无关：直接复用 buildCatalog + ToolEntry.execute（不重声明工具、不重裹 execute）。
-// ToolEnv 从环境变量读：NORMIFY_ROOT_DIR（默认 cwd）、NORMIFY_REQUIRE_BILINGUAL（默认 '1'→true）。
+// InfraEnv/Policy 从环境变量读：NORMIFY_ROOT_DIR（默认 cwd）、NORMIFY_REQUIRE_BILINGUAL（默认 '1'→true）。
 // pi 运行时加载本源文件（.ts，自动发现 glob）；lib/pi/normify.js 供单测 + 构建工件。
 
 import { Type } from 'typebox';
@@ -8,7 +8,7 @@ import type { TSchema, TObject } from 'typebox';
 import { StringEnum } from '@earendil-works/pi-ai';
 import { buildCatalog } from '../catalog.js';
 import type { ExtensionAPI, ToolResultEvent } from '@earendil-works/pi-coding-agent';
-import type { ObjectSchema, SchemaNode, ToolEnv } from '../catalog.js';
+import type { ObjectSchema, SchemaNode, InfraEnv, Policy } from '../catalog.js';
 import { companionReminder, parseCompanionConfig, WRITE_TOOLS } from '../companion.js';
 import type { CompanionConfig } from '../companion.js';
 
@@ -77,11 +77,11 @@ export function formatResultText(value: unknown): string {
 }
 
 /**
- * 遍历 buildCatalog(env)，对每个 entry 调 pi.registerTool。
+ * 遍历 buildCatalog({}, infra, policy)，对每个 entry 调 pi.registerTool。
  * execute 转调 entry.execute（已含 missing-args + toErrorPayload，平台无关），结果经 formatResultText 入 content。
  */
-export function registerPiTools(pi: ExtensionAPI, env: ToolEnv): void {
-    const catalog = buildCatalog(env);
+export function registerPiTools(pi: ExtensionAPI, infra: InfraEnv, policy: Policy): void {
+    const catalog = buildCatalog({}, infra, policy);
     for (const entry of catalog) {
         pi.registerTool({
             name: entry.name,
@@ -119,11 +119,13 @@ export function createCompanionHandler(config: CompanionConfig) {
 
 // env 来源：ExtensionAPI 无 cwd 字段（实测 types.d.ts），rootDir 从环境变量读（与 MCP 同源）
 export default function (pi: ExtensionAPI): void {
-    const env: ToolEnv = {
+    const infra: InfraEnv = {
         rootDir: process.env.NORMIFY_ROOT_DIR ?? process.cwd(),
+    };
+    const policy: Policy = {
         requireBilingual: (process.env.NORMIFY_REQUIRE_BILINGUAL ?? '1') !== '0',
     };
-    registerPiTools(pi, env);
+    registerPiTools(pi, infra, policy);
     // §5.2 S5 companion 提醒钩子：pi.on('tool_result') 覆盖所有工具（bash/edit/write/.../Custom），
     // WRITE_TOOLS 匹配外部 write/edit（pi 复刻 DSH 语义；normify_* 走 Custom 不匹配 regex，不计）。
     // handler 返回改写 content（pi L258 REPLACE：hookResult?.content ?? result.content）。

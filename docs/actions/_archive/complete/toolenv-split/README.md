@@ -1,9 +1,9 @@
 # ToolEnv Split
 
 - Action: `toolenv-split`
-- Status: `ready`
+- Status: `complete`
 - Updated: 2026-09-27
-- Status authority: [Action Status](../STATUS.md)
+- Status authority: [Action Status](../../../STATUS.md)
 - Design source: arch-cleanup R-005 deferred 项（god-port 异味）+ ToolEnv 字段用法 grep 实证（见 Design inputs）
 
 ## Background
@@ -115,17 +115,39 @@ export function buildCatalog(security: SecurityContext, infra: InfraEnv, policy:
 
 | ID | Requirement | Observable condition | Planned evidence | Status |
 | --- | --- | --- | --- | --- |
-| A-001 | R-001 | `grep "interface SecurityContext\|interface InfraEnv\|interface Policy" src/catalog.ts` 3 行；ToolEnv 字段不跨 facet | grep + tsc | pending |
-| A-002 | R-002 | buildCatalog 签名 3 参；resolve/handler/listProjects 读 facet 非 env | grep "env\." src/catalog.ts 仅注释/0 | pending |
-| A-003 | R-003 | SessionState 去 env + 加 `infra`/`policy`（顶层 `userId`/`projectAllowlist` 保留）；pushSnapshot 写 `state.infra.bridge`；identity 单存顶层（去重）；createSessionState 传同一 infra 对象给 buildCatalog + 存 state.infra（不变量） | grep "state.infra.bridge" + grep "env: ToolEnv" src/session.ts 空 + session-isolation 13 PASS（5 处 st.userId 断言不动）+ dual-side-snapshot 5 PASS（pushSnapshot 后闭包见 bridge） | pending |
-| A-004 | R-004 | parity 27 + npm test 12 套 + ci-contract + tsc 0 全绿 | 测试输出 | pending |
-| A-005 | R-005 | createSessionState: identity ← token（顶层）、infra ← env、policy ← env；buildCatalog 从 identity 派生 security 显式 | grep session.ts 构造路径 | pending |
+| A-001 | R-001 | `grep "interface SecurityContext\|interface InfraEnv\|interface Policy" src/catalog.ts` 3 行；ToolEnv 字段不跨 facet | grep + tsc | **passed** |
+| A-002 | R-002 | buildCatalog 3 参；resolve/handler/listProjects 读 facet 非 env | `grep "env\." src/catalog.ts` 业务代码 0 | **passed** |
+| A-003 | R-003 | SessionState 去 env + 加 `infra`/`policy`（顶层 identity 保留）；pushSnapshot 写 `state.infra.bridge`；createSessionState 传同一 infra 给 buildCatalog + 存 state.infra（不变量） | grep `env: ToolEnv` src/session.ts 空 + session-isolation 13 PASS（5 处 st.userId 不动）+ dual-side-snapshot 5 PASS（pushSnapshot 后闭包见 bridge） | **passed** |
+| A-004 | R-004 | parity 27 + npm test 12 套 + ci-contract + tsc 0 全绿 | 测试输出 | **passed** |
+| A-005 | R-005 | createSessionState: identity←token（顶层）、infra←env、policy←env；buildCatalog 从 identity 派生 security 显式 | grep session.ts 构造路径 | **passed** |
 
 ## Validation
 
 - AP-001/002：`grep "interface SecurityContext\|InfraEnv\|Policy" src/catalog.ts`（3 行）+ `grep "env\." src/catalog.ts`（业务代码 0）+ `npx tsc --noEmit`（0）。
 - AP-003：`node tests/parity-differential.mjs`（27 PASS）+ `npm test`（12 绿）。
 - 全程：`node ci-contract-check.cjs`（绿）+ `grep "state.infra.bridge" src/session.ts`（有）。
+
+## Execution
+
+user 2026-09-27 授权 in_progress → 执行 AP-001~AP-003。实施按 A″（identity 留顶层 + 派生 security）。
+
+- **AP-001（catalog.ts）**：Python 脚本机械 rename 19 处 `env.X`→facet.X（rootDir→infra 3 / bridge→infra 6 / requireBilingual→policy 4 / userScope→security 4 / projectAllowlist→security 2）；`ToolEnv` 接口拆 `SecurityContext`+`InfraEnv`+`Policy` 3 接口；`buildCatalog(security, infra, policy)` 3 参签名；删 `ToolEnv`。无局部 env 变量 shadow（grep 实证 env 仅签名处）→ 脚本替换安全。
+- **AP-002（session.ts）**：`SessionState` 去 `env: ToolEnv` → 顶层 `userId`/`projectAllowlist`（保留）+ `infra: InfraEnv` + `policy: Policy`；`pushSnapshot(state, bridge)` 写 `state.infra.bridge`（非 `state.env.bridge`）；`createSessionState(sessionId, infra, policy, token, authConfig, ...)` 改 5 参——identity←token（顶层 userId/projectAllowlist），buildCatalog 调用处从 identity 派生 `SecurityContext`，同一 infra 对象传 buildCatalog + 存 state.infra（不变量保闭包见 pushSnapshot 字段变更）。
+- **AP-003（adapter + tests）**：DSH `registerTools(ctx, infra, policy)` + index.ts `apply` 拆参；pi `registerPiTools(pi, infra, policy)` + default export 拆 `infra`/`policy`；MCP server `baseInfra`+`basePolicy` 替 `baseEnv`，2 处 `createSessionState` 调用改参序。tests：parity/session-isolation(5 处 createSessionState + 2 处 buildCatalog)/dual-side-http buildCatalog 调用同步。
+- 执行期注释修复：server.ts/pi normify.ts L3 注释 `ToolEnv 从环境变量读` → `InfraEnv/Policy 从环境变量读`；pi normify.ts L80 注释 `buildCatalog(env)` → `buildCatalog({}, infra, policy)`。
+
+验收结果（2026-09-27）：
+- `grep interface SecurityContext/InfraEnv/Policy src/catalog.ts` → 3（+ 注释 2）✓
+- `grep env\. src/catalog.ts`（业务代码）→ 0 ✓
+- `grep env: ToolEnv src/session.ts` → 0 ✓
+- `grep state.infra.bridge src/session.ts` → 1 ✓
+- `grep -rn ToolEnv src/` → 0（仅注释已修）✓
+- `npx tsc --noEmit` → 0 ✓
+- `node tests/parity-differential.mjs` → 27 PASS ✓
+- `npm test` → 12 套全绿 ✓
+- `node ci-contract-check.cjs` → 绿 ✓
+- session-isolation 13 PASS（5 处 st.userId 断言不动——A″ 保留顶层 identity 验证）✓
+- dual-side-snapshot 5 PASS（pushSnapshot 写 state.infra.bridge 后闭包见 bridge——不变量验证）✓
 
 ## Readiness gaps
 

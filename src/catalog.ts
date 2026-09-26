@@ -21,15 +21,24 @@ import { HELP_TOPICS, toolReference, topicReference } from './engine/reference.j
 import type { HelpTopic, ToolCatalogEntry } from './engine/reference.js';
 import type { ChangeModules, ChangeStatus, Diagnostic, LayoutData, LayoutEdgeHint, LayoutGroup, LocalizedText, Module, ModuleFile, ModuleState, PolicyData, PolicyRule, SourceRef } from './engine/types.js';
 
-export interface ToolEnv {
-    rootDir: string;
-    requireBilingual: boolean;
-    /** session-isolation：用户图隔离维度。undefined=default user（向后兼容，路径 rootDir/normify-<slug>/）。给定则路径 rootDir/<userScope>/normify-<slug>/。 */
+/** toolenv-split：SecurityContext（auth/token 源，session-isolation）——用户图隔离 + 项目 allowlist。 */
+export interface SecurityContext {
+    /** 用户图隔离维度。undefined=default user（向后兼容，路径 rootDir/normify-<slug>/）。给定则路径 rootDir/<userScope>/normify-<slug>/。 */
     userScope?: string;
-    /** session-isolation：auth 项目 allowlist。undefined=全可见（无 auth）。给定则 project slug 必须在列。 */
+    /** auth 项目 allowlist。undefined=全可见（无 auth）。给定则 project slug 必须在列。 */
     projectAllowlist?: string[];
-    /** dual-side-mode DP1：仓库桥。undefined=LocalBridge(repoRoot)（DSH/stdio，向后兼容）；SessionCacheBridge（DP4）从 R3 推送快照读。 */
+}
+
+/** toolenv-split：InfraEnv（config 源）——图 DB 根 + repoRoot 桥。 */
+export interface InfraEnv {
+    rootDir: string;
+    /** 仓库桥。undefined=LocalBridge(repoRoot)（DSH/stdio，向后兼容）；SessionCacheBridge（DP4）从 R3 推送快照读（经 pushSnapshot 置 session.infra.bridge）。 */
     bridge?: RepoBridge;
+}
+
+/** toolenv-split：Policy（config 源）——双语策略。 */
+export interface Policy {
+    requireBilingual: boolean;
 }
 
 /** JSON Schema 节点（作者态：属性级内联 required: true；编译后对象级为 required: string[]）。 */
@@ -570,7 +579,7 @@ function diagnosticsOut(errors: Diagnostic[], warnings: Diagnostic[]): { ok: boo
         summary: errors.length + ' error / ' + warnings.length + ' warning',
     };
 }
-export function buildCatalog(env: ToolEnv): ToolEntry[] {
+export function buildCatalog(security: SecurityContext, infra: InfraEnv, policy: Policy): ToolEntry[] {
     const catalog: ToolEntry[] = [];
     const register = <A>(key: string, def: ToolDef, execute: (args: A) => Promise<unknown>): void => {
         const behavior = def.behavior;
@@ -600,12 +609,12 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
     };
     const resolve = (args: ProjectArgs, create = false): Promise<ProjectRef> => {
         // session-isolation：auth allowlist 校验（userScope 给定即 auth 开；project 作 slug 时校验在列）
-        if (env.userScope !== undefined && env.projectAllowlist !== undefined && args.project && !/[\/\\:]/.test(args.project)) {
-            if (!env.projectAllowlist.includes(args.project)) {
-                throw new NormifyError('session/project-not-allowed', '项目不在授权 allowlist：' + args.project + '（user=' + env.userScope + '）');
+        if (security.userScope !== undefined && security.projectAllowlist !== undefined && args.project && !/[\/\\:]/.test(args.project)) {
+            if (!security.projectAllowlist.includes(args.project)) {
+                throw new NormifyError('session/project-not-allowed', '项目不在授权 allowlist：' + args.project + '（user=' + security.userScope + '）');
             }
         }
-        return resolveProject(env.rootDir, { project: args.project, dir: args.dir }, { create }, env.userScope);
+        return resolveProject(infra.rootDir, { project: args.project, dir: args.dir }, { create }, security.userScope);
     };
     register('normify_tree_list', {
         description: '列出全部结构数据项目（normify-* 目录，含每棵树的根与仓库）。',
@@ -614,8 +623,8 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
             root: strOpt('搜索根目录（默认插件配置的 rootDir，可传工作区绝对路径）'),
         }),
     }, async (args: TreeListArgs) => {
-        const rootDir = typeof args.root === 'string' && args.root.trim() !== '' ? args.root : env.rootDir;
-        const projects: ProjectRef[] = listProjects(rootDir, env.userScope);
+        const rootDir = typeof args.root === 'string' && args.root.trim() !== '' ? args.root : infra.rootDir;
+        const projects: ProjectRef[] = listProjects(rootDir, security.userScope);
         const out: TreeListRow[] = [];
         for (const p of projects) {
             const roots: ModuleFile[] = (await loadAllModules(p.dir)).files.filter(f => f.module.parent === null);
@@ -625,7 +634,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
                 trees: roots.map(r => ({ tree_id: r.module.id, root_uid: r.module.uid, repository: r.module.repository ?? null })),
             });
         }
-        return { ok: true, rootDir: env.rootDir, projects: out };
+        return { ok: true, rootDir: infra.rootDir, projects: out };
     });
     register('normify_module_get', {
         description: '读取单个模块（frontmatter 字段 + 正文）。',
@@ -852,7 +861,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         }, []),
     }, async (args: RepoRootArgs) => {
         const proj = await resolve(args);
-        const v = await validateProject(proj.dir, { repoRoot: args.repoRoot, bridge: typeof args.repoRoot === 'string' ? (env.bridge ?? new LocalBridge(args.repoRoot)) : undefined, requireBilingual: env.requireBilingual });
+        const v = await validateProject(proj.dir, { repoRoot: args.repoRoot, bridge: typeof args.repoRoot === 'string' ? (infra.bridge ?? new LocalBridge(args.repoRoot)) : undefined, requireBilingual: policy.requireBilingual });
         return diagnosticsOut(v.errors, v.warnings);
     });
     register('normify_build', {
@@ -864,7 +873,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         }, []),
     }, async (args: RepoRootArgs) => {
         const proj = await resolve(args);
-        const b = await buildProject(proj.dir, { repoRoot: args.repoRoot, bridge: typeof args.repoRoot === 'string' ? (env.bridge ?? new LocalBridge(args.repoRoot)) : undefined, requireBilingual: env.requireBilingual });
+        const b = await buildProject(proj.dir, { repoRoot: args.repoRoot, bridge: typeof args.repoRoot === 'string' ? (infra.bridge ?? new LocalBridge(args.repoRoot)) : undefined, requireBilingual: policy.requireBilingual });
         if (!b.ok) {
             return { ok: false, errors: b.errors.map(fmtDiag), warnings: b.warnings.map(fmtDiag), summary: b.errors.length + ' error（未产出任何产物）' };
         }
@@ -882,7 +891,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         const proj = await resolve(args);
         const repoRoot = String(args.repoRoot);
         const diff = args.diff;
-        const bridge: RepoBridge = env.bridge ?? new LocalBridge(repoRoot);
+        const bridge: RepoBridge = infra.bridge ?? new LocalBridge(repoRoot);
         const changed = gitChangedFiles(bridge, diff ?? '');
         if (changed.files === null) {
             return { ok: false, error: { code: 'sync/git-failed', message: changed.error ?? 'git 不可用' } };
@@ -1070,7 +1079,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         }, []),
     }, async (args: ProjectArgs) => {
         const proj = await resolve(args);
-        const b = await buildProject(proj.dir, { requireBilingual: env.requireBilingual });
+        const b = await buildProject(proj.dir, { requireBilingual: policy.requireBilingual });
         if (!b.ok) {
             return { ok: false, errors: b.errors.map(fmtDiag), summary: 'outline 未更新（存在 error）' };
         }
@@ -1216,7 +1225,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
     }, async (args: FingerprintArgs) => {
         const repoRoot = String(args.repoRoot);
         const sources = Array.isArray(args.source) ? args.source : [];
-        const bridge: RepoBridge = env.bridge ?? new LocalBridge(repoRoot);
+        const bridge: RepoBridge = infra.bridge ?? new LocalBridge(repoRoot);
         const fp = await fingerprintOf(bridge, sources);
         return {
             ok: fp.missing.length === 0,
@@ -1525,7 +1534,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
             return { ok: false, error: { code: 'refresh/no-target', message: '必须提供 ids 或 all:true' } };
         }
         const repoRoot = String(args.repoRoot);
-        const bridge: RepoBridge = env.bridge ?? new LocalBridge(repoRoot);
+        const bridge: RepoBridge = infra.bridge ?? new LocalBridge(repoRoot);
         const r = await refreshModules(proj.dir, {
             ids,
             all: args.all === true,
@@ -1690,11 +1699,11 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         const proj = await resolve(args);
         const r = await closeChange(proj.dir, String(args.id), {
             repoRoot: typeof args.repoRoot === 'string' ? args.repoRoot : undefined,
-            bridge: typeof args.repoRoot === 'string' ? (env.bridge ?? new LocalBridge(args.repoRoot)) : undefined,
+            bridge: typeof args.repoRoot === 'string' ? (infra.bridge ?? new LocalBridge(args.repoRoot)) : undefined,
             activate: args.activate !== false,
             render: args.render === true,
             note: typeof args.note === 'string' ? args.note : undefined,
-            requireBilingual: env.requireBilingual,
+            requireBilingual: policy.requireBilingual,
         });
         return {
             ok: r.ok,

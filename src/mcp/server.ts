@@ -1,6 +1,6 @@
 // MCP server：把 normify catalog 暴露给 Claude / Cursor / Codex / pi 等宿主。
 // 平台无关：直接复用 buildCatalog + ToolEntry.execute（不重声明工具、不重裹 execute）。
-// ToolEnv 从环境变量读：NORMIFY_ROOT_DIR（默认 cwd）、NORMIFY_REQUIRE_BILINGUAL（默认 '1'→true）。
+// InfraEnv/Policy 从环境变量读：NORMIFY_ROOT_DIR（默认 cwd）、NORMIFY_REQUIRE_BILINGUAL（默认 '1'→true）。
 // session-isolation：经 SessionManager（src/session.ts）建 session，catalog/companionCount per-session。
 // dual-side-mode DP2：NORMIFY_TRANSPORT=stdio（默认，1 session）| http（StreamableHTTPServerTransport，
 //   stateful transport-per-session，每会话独立 Server + SessionState，多 agent 连同一 server）。
@@ -14,15 +14,17 @@ import { createServer as createHttpServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
-import type { ToolBehavior, ToolEnv } from '../catalog.js';
+import type { ToolBehavior, InfraEnv, Policy } from '../catalog.js';
 import { companionReminder } from '../companion.js';
 import { SessionManager, STDIO_SESSION_ID, createSessionState, parseAuthConfig, pushSnapshot } from '../session.js';
 import type { SessionState } from '../session.js';
 import { SessionCacheBridge } from '../bridge.js';
 
 // 服务器级配置（非 per-session）：rootDir base + requireBilingual + authConfig
-const baseEnv: ToolEnv = {
+const baseInfra: InfraEnv = {
     rootDir: process.env.NORMIFY_ROOT_DIR ?? process.cwd(),
+};
+const basePolicy: Policy = {
     requireBilingual: (process.env.NORMIFY_REQUIRE_BILINGUAL ?? '1') !== '0',
 };
 const authConfig = parseAuthConfig(process.env);
@@ -142,7 +144,7 @@ if (transportMode === 'http') {
                         sessions.set(newSid, { transport, server });
                         // 建 SessionState（per-session catalog + companionCount；token 经 env，DP4 改 header）
                         if (!sessionManager.get(newSid)) {
-                            sessionManager.create(createSessionState(newSid, baseEnv, token, authConfig));
+                            sessionManager.create(createSessionState(newSid, baseInfra, basePolicy, token, authConfig));
                         }
                         // R-007 SHOULD：transport onclose → session 清理
                         transport.onclose = () => { sessions.delete(newSid); sessionManager.delete(newSid); };
@@ -152,12 +154,12 @@ if (transportMode === 'http') {
         });
     });
     httpServer.listen(port, () => {
-        console.log(`normify MCP HTTP server on :${port} (rootDir=${baseEnv.rootDir})`);
+        console.log(`normify MCP HTTP server on :${port} (rootDir=${baseInfra.rootDir})`);
     });
 }
 else {
     // stdio（默认，1 session）：synthesize 固定 STDIO_SESSION_ID
-    const stdioState = createSessionState(STDIO_SESSION_ID, baseEnv, process.env.NORMIFY_SERVER_TOKEN, authConfig);
+    const stdioState = createSessionState(STDIO_SESSION_ID, baseInfra, basePolicy, process.env.NORMIFY_SERVER_TOKEN, authConfig);
     sessionManager.create(stdioState);
     const server = buildServer();
     registerHandlers(server, () => sessionManager.get(STDIO_SESSION_ID)!);

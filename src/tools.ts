@@ -1,5 +1,5 @@
 import { buildCatalog } from './catalog.js';
-import type { ToolEntry, ToolEnv, ToolBehavior, ObjectSchema } from './catalog.js';
+import type { ToolEntry, InfraEnv, Policy, ToolBehavior, ObjectSchema } from './catalog.js';
 import type { Context } from '@deepseek-ai/cordis';
 
 /** dsh-tools 服务的注册面（可选外部服务）。 */
@@ -25,9 +25,9 @@ interface ToolRegistration {
 }
 
 /** DSH 适配器：遍历 buildCatalog 产出的 ToolEntry，补 DSH 专属字段后注册。
- *  execute 直接用 entry.execute（已含 missing-args + toErrorPayload，platform-agnostic）。 */
-export function registerTools(ctx: Context, env: ToolEnv): void {
-    const catalog = buildCatalog(env);
+ *  toolenv-split：registerTools(ctx, infra, policy)——无 auth（security=undefined）；DSH harness 经 apply(ctx, config) 调用。 */
+export function registerTools(ctx: Context, infra: InfraEnv, policy: Policy): void {
+    const catalog = buildCatalog({}, infra, policy);
     const tools = (ctx as unknown as { tools?: ToolService }).tools;
     if (tools === undefined || tools.register === undefined)
         return;

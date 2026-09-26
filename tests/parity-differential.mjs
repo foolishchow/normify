@@ -60,7 +60,7 @@ const WORKFLOW = [
 // === Path A: DSH-direct（catalog execute，in-process）===
 async function runDshDirect(rootDir) {
     const env = { rootDir, requireBilingual: false };
-    const catalog = buildCatalog(env);
+    const catalog = buildCatalog({}, { rootDir }, { requireBilingual: false });
     const byName = Object.fromEntries(catalog.map(e => [e.name, e]));
     assert(catalog.length === 31, `A: catalog 31 工具（实际 ${catalog.length}）`);
     const results = [];

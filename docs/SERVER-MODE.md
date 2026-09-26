@@ -212,3 +212,15 @@ client 跑 normify_fingerprint(repoRoot, source)
 - 多项目一服务器的 allowlist 配置格式——SP4。
 - pi 瘦客户端 MCP SDK 依赖解析——DP3。
 - SessionCacheBridge 缓存粒度/失效——DP4。
+
+---
+
+## toolenv-split 回流（2026-09-27）
+
+上文 `ToolEnv`（session-isolation SP2 加 `userScope`/`projectAllowlist`、dual-side DP1 加 `bridge`）的历史记录保留作演进轨迹。`toolenv-split` Action（已 complete）将 god-port `ToolEnv` 拆为 3 facet：
+
+- `SecurityContext`（`userScope?`/`projectAllowlist?`，源 auth/token）——session-isolation SP2 字段归此。
+- `InfraEnv`（`rootDir`/`bridge?`，源 config/R3 推送）——dual-side DP1 `bridge` 归此。
+- `Policy`（`requireBilingual`，源 config）。
+
+`buildCatalog(security, infra, policy)` 改 3 参签名；`SessionState` 去 `env: ToolEnv`，identity（`userId`/`projectAllowlist`）留顶层（session 身份），加 `infra`/`policy`；`pushSnapshot` 写 `state.infra.bridge`（原 `state.env.bridge`）。`ToolEnv` 类型已删（无外部代码消费者）。详见 `docs/actions/_archive/complete/toolenv-split/README.md`。

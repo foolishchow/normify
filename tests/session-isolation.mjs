@@ -31,7 +31,7 @@ await (async () => {
         const mgr = new SessionManager();
         const env = { rootDir: root, requireBilingual: true };
         const auth = parseAuthConfig({ NORMIFY_AUTH_TOKENS: authTokens });
-        const st = createSessionState(STDIO_SESSION_ID, env, undefined, auth);
+        const st = createSessionState(STDIO_SESSION_ID, { rootDir: root }, { requireBilingual: true }, undefined, auth);
         mgr.create(st);
         const got = mgr.get(STDIO_SESSION_ID);
         eq(got?.sessionId, STDIO_SESSION_ID);
@@ -85,11 +85,9 @@ await (async () => {
 
     // A-004 两 userScope catalog → resolve 不同路径（per-session catalog 隔离）
     await T('A-004 alice vs bob catalog project_init 同 slug 落不同 scope 路径', async () => {
-        // 无 allowlist（仅 userScope）→ 可自由 create，证明 catalog 闭包经 env.userScope 注入 resolveProject
-        const envA = { rootDir: root, requireBilingual: true, userScope: 'alice' };
-        const envB = { rootDir: root, requireBilingual: true, userScope: 'bob' };
-        const catA = buildCatalog(envA);
-        const catB = buildCatalog(envB);
+        // 无 allowlist（仅 userScope）→ 可自由 create，证明 catalog 闭包经 security.userScope 注入 resolveProject
+        const catA = buildCatalog({ userScope: 'alice' }, { rootDir: root }, { requireBilingual: true });
+        const catB = buildCatalog({ userScope: 'bob' }, { rootDir: root }, { requireBilingual: true });
         const rA = await catA.find(e => e.name === 'normify_project_init').execute({ project: 'a4' });
         const rB = await catB.find(e => e.name === 'normify_project_init').execute({ project: 'a4' });
         eq(rA.ok, true);
@@ -109,21 +107,21 @@ await (async () => {
     });
     await T('A-005 createSessionState(token) → userId + projectAllowlist 注入 SessionState', () => {
         const auth = parseAuthConfig({ NORMIFY_AUTH_TOKENS: authTokens });
-        const st = createSessionState('s1', { rootDir: root, requireBilingual: true }, 'tok-alice', auth);
+        const st = createSessionState('s1', { rootDir: root }, { requireBilingual: true }, 'tok-alice', auth);
         eq(st.userId, 'alice');
         eq(JSON.stringify(st.projectAllowlist), JSON.stringify(['demo-repo', 'auth']));
     });
     await T('A-005 allowlist 拒绝：bob 调 auth（不在 bob allowlist）→ session/project-not-allowed', async () => {
         // bob allowlist=[demo-repo]，调 'auth' → resolve 闭包 allowlist 校验先于项目存在性
         const auth = parseAuthConfig({ NORMIFY_AUTH_TOKENS: authTokens });
-        const st = createSessionState('s-bob', { rootDir: root, requireBilingual: true }, 'tok-bob', auth);
+        const st = createSessionState('s-bob', { rootDir: root }, { requireBilingual: true }, 'tok-bob', auth);
         const r = await st.catalog.find(e => e.name === 'normify_module_list').execute({ project: 'auth' });
         eq(r.ok, false);
         eq(r.error.code, 'session/project-not-allowed');
     });
     await T('A-005 对照 无 auth（无 token）→ allowlist undefined，不限项目', async () => {
         const auth = parseAuthConfig({}); // 无 env
-        const st = createSessionState('s-def', { rootDir: root, requireBilingual: true }, undefined, auth);
+        const st = createSessionState('s-def', { rootDir: root }, { requireBilingual: true }, undefined, auth);
         eq(st.projectAllowlist, undefined);
         eq(st.userId, undefined);
     });
@@ -132,8 +130,7 @@ await (async () => {
     await T('A-007 SessionManager.delete 触发 onclose 钩子', () => {
         const mgr = new SessionManager();
         let closed = false;
-        const env = { rootDir: root, requireBilingual: true };
-        const st = createSessionState('s-temp', env, undefined, parseAuthConfig({}));
+        const st = createSessionState('s-temp', { rootDir: root }, { requireBilingual: true }, undefined, parseAuthConfig({}));
         mgr.create(st);
         mgr.setOnclose('s-temp', () => { closed = true; });
         mgr.delete('s-temp');

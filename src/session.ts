@@ -4,7 +4,7 @@
 // auth 脚手架：NORMIFY_AUTH_TOKENS=JSON{token:{userId,projects}} → token 解析 {userId, projectAllowlist}；
 // 无 token = default user（userId=undefined, allowlist=undefined=全可见，向后兼容）。
 // stdio token 经 env NORMIFY_SERVER_TOKEN 注入（scaffolding）；http token 经 transport 元数据（dual-side-mode DP2）。
-import type { ToolEntry, ToolEnv } from './catalog.js';
+import type { ToolEntry, SecurityContext, InfraEnv, Policy } from './catalog.js';
 import { buildCatalog } from './catalog.js';
 import type { CompanionConfig } from './companion.js';
 import { parseCompanionConfig } from './companion.js';
@@ -13,21 +13,26 @@ import type { RepoBridge } from './bridge.js';
 /** SessionState：同形状（stdio 1/http N）。 */
 export interface SessionState {
     sessionId: string;
-    userId: string | undefined;              // from token; undefined = default user
-    projectAllowlist: string[] | undefined;  // undefined = all projects（无 auth）
+    /** 顶层 identity（session 身份，供未来 logging/access/审计）。from token; undefined = default user。 */
+    userId: string | undefined;
+    /** 顶层 identity。undefined = all projects（无 auth）。 */
+    projectAllowlist: string[] | undefined;
+    /** toolenv-split：InfraEnv（config/R3 推送源；可变 .bridge——pushSnapshot 后置 SessionCacheBridge，catalog 闭包读 infra.bridge）。 */
+    infra: InfraEnv;
+    /** toolenv-split：Policy（config 源）。 */
+    policy: Policy;
     companionCount: number;
     companionConfig: CompanionConfig;
-    catalog: ToolEntry[];                     // per-session buildCatalog(env with userScope)
-    /** DP4：会话 ToolEnv（可变 .bridge——pushSnapshot 后置 SessionCacheBridge，catalog 闭包调用时读 env.bridge）。 */
-    env: ToolEnv;
+    catalog: ToolEntry[];                     // per-session buildCatalog(security←identity, infra, policy)
 }
 
 /**
- * arch-cleanup AP-003：R3 推送快照赋值。use-case 层只赋 env.bridge = bridge（认 RepoBridge 接口）；
+ * arch-cleanup AP-003 + toolenv-split：R3 推送快照赋值。use-case 层只赋 infra.bridge = bridge（认 RepoBridge 接口）；
  * SessionCacheBridge 构造留 adapter（mcp/server.ts /snapshot handler）——session.ts 不 import 具体 infrastructure。
+ * 不变量：createSessionState 传同一 infra 对象给 buildCatalog + 存 state.infra（字段变更对闭包可见）。
  */
 export function pushSnapshot(state: SessionState, bridge: RepoBridge): void {
-    state.env.bridge = bridge;
+    state.infra.bridge = bridge;
 }
 
 /** token 解析出的身份。 */
@@ -88,22 +93,22 @@ export class SessionManager {
     }
 }
 
-/** 从 env + token 建 SessionState。catalog per-session（env 带 userScope）。 */
+/** 从 identity + infra + policy 建 SessionState。catalog per-session：security←identity（buildCatalog 调用处派生）。 */
 export function createSessionState(
     sessionId: string,
-    env: ToolEnv,
+    infra: InfraEnv,
+    policy: Policy,
     token: string | undefined,
     authConfig: Map<string, AuthIdentity>,
     companionEnv: NodeJS.ProcessEnv = process.env,
 ): SessionState {
     const identity = resolveSessionAuth(token, authConfig);
-    const sessionEnv: ToolEnv = {
-        rootDir: env.rootDir,
-        requireBilingual: env.requireBilingual,
+    const security: SecurityContext = {
         userScope: identity?.userId,
         projectAllowlist: identity?.projects,
     };
-    const catalog = buildCatalog(sessionEnv);
+    // 不变量：同一 infra 对象引用传给 buildCatalog（闭包捕获）并存入 state.infra——pushSnapshot 字段变更对闭包可见。
+    const catalog = buildCatalog(security, infra, policy);
     return {
         sessionId,
         userId: identity?.userId,
@@ -111,7 +116,8 @@ export function createSessionState(
         companionCount: 0,
         companionConfig: parseCompanionConfig(companionEnv),
         catalog,
-        env: sessionEnv,
+        infra,
+        policy,
     };
 }
 

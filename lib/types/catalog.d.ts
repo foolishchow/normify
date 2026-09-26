@@ -1,13 +1,20 @@
 import type { RepoBridge } from './bridge.js';
-export interface ToolEnv {
-    rootDir: string;
-    requireBilingual: boolean;
-    /** session-isolation：用户图隔离维度。undefined=default user（向后兼容，路径 rootDir/normify-<slug>/）。给定则路径 rootDir/<userScope>/normify-<slug>/。 */
+/** toolenv-split：SecurityContext（auth/token 源，session-isolation）——用户图隔离 + 项目 allowlist。 */
+export interface SecurityContext {
+    /** 用户图隔离维度。undefined=default user（向后兼容，路径 rootDir/normify-<slug>/）。给定则路径 rootDir/<userScope>/normify-<slug>/。 */
     userScope?: string;
-    /** session-isolation：auth 项目 allowlist。undefined=全可见（无 auth）。给定则 project slug 必须在列。 */
+    /** auth 项目 allowlist。undefined=全可见（无 auth）。给定则 project slug 必须在列。 */
     projectAllowlist?: string[];
-    /** dual-side-mode DP1：仓库桥。undefined=LocalBridge(repoRoot)（DSH/stdio，向后兼容）；SessionCacheBridge（DP4）从 R3 推送快照读。 */
+}
+/** toolenv-split：InfraEnv（config 源）——图 DB 根 + repoRoot 桥。 */
+export interface InfraEnv {
+    rootDir: string;
+    /** 仓库桥。undefined=LocalBridge(repoRoot)（DSH/stdio，向后兼容）；SessionCacheBridge（DP4）从 R3 推送快照读（经 pushSnapshot 置 session.infra.bridge）。 */
     bridge?: RepoBridge;
+}
+/** toolenv-split：Policy（config 源）——双语策略。 */
+export interface Policy {
+    requireBilingual: boolean;
 }
 /** JSON Schema 节点（作者态：属性级内联 required: true；编译后对象级为 required: string[]）。 */
 export interface SchemaNode {
@@ -41,4 +48,4 @@ export interface ToolEntry {
     parameters: ObjectSchema;
     execute: (args: Record<string, unknown>) => Promise<unknown>;
 }
-export declare function buildCatalog(env: ToolEnv): ToolEntry[];
+export declare function buildCatalog(security: SecurityContext, infra: InfraEnv, policy: Policy): ToolEntry[];
