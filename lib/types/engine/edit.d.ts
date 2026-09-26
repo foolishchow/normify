@@ -1,3 +1,4 @@
+import type { RepoBridge } from '../bridge.js';
 import type { Diagnostic, Module, ModuleState } from './types.js';
 /**
  * 修改强化：patch / batch（原子）/ move（级联）/ refresh（激活）。
@@ -55,6 +56,7 @@ export interface RefreshOptions extends EditOptions {
     ids?: string[];
     all?: boolean;
     repoRoot: string;
+    bridge: RepoBridge;
     activate?: boolean;
 }
 /** 重算 fingerprint/revision/updated_at；planned 模块落地后可用 activate 一键转 active。 */

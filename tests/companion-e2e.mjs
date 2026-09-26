@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 
 import { resolveProject, loadAllModules, fingerprintOf } from '../lib/engine/store.js'
+import { LocalBridge } from '../lib/bridge.js'
 import { batchWrite, patchModule, moveModuleTree, refreshModules, checkProposal } from '../lib/engine/edit.js'
 import { loadPolicyFile, writePolicyFile, l1ValidatePolicy } from '../lib/engine/policy.js'
 import { loadChangeFile, writeChangeFile } from '../lib/engine/changes.js'
@@ -31,7 +32,7 @@ const rev = () => git('rev-parse', 'HEAD')
 let projectDir
 async function mod(id, parent, zh, en, desc, extra = {}) {
   const source = extra.source ?? [{ path: 'src/' + (id.split('.').slice(1).join('_') || 'main') + '.ts' }]
-  const fp = await fingerprintOf(repo, source)
+  const fp = await fingerprintOf(new LocalBridge(repo), source)
   return {
     frontmatter: {
       uid: uid(id), id, parent,
@@ -119,7 +120,7 @@ async function main() {
   console.log('move OK：id 级联 + 渲染数据随迁并重写内容（0.5.2 修复），move 后 L2 = 0 error')
 
   step('6. refresh：planned → active')
-  const rf = await refreshModules(projectDir, { ids: ['demo-repo.platform.consumer'], activate: true, repoRoot: repo })
+  const rf = await refreshModules(projectDir, { ids: ['demo-repo.platform.consumer'], activate: true, repoRoot: repo, bridge: new LocalBridge(repo) })
   assert(rf.ok !== false, 'refresh 应成功: ' + JSON.stringify(rf.errors?.slice(0, 2)))
   const refreshed = (await loadAllModules(projectDir)).files.find(f => f.module.id === 'demo-repo.platform.consumer').module
   assert((refreshed.state ?? 'active') === 'active', 'planned 应转为 active')
@@ -134,7 +135,7 @@ async function main() {
     created_at: now(), updated_at: now(),
   }
   await writeChangeFile(projectDir, change)
-  const closed = await closeChange(projectDir, '2026-09-12-e2e-close', { repoRoot: repo, activate: true })
+  const closed = await closeChange(projectDir, '2026-09-12-e2e-close', { repoRoot: repo, bridge: new LocalBridge(repo), activate: true })
   assert(closed.ok !== false, 'close 应成功: ' + JSON.stringify((closed.errors ?? []).slice(0, 2)))
   const cf = await loadChangeFile(projectDir, '2026-09-12-e2e-close')
   assert(cf.change !== null && cf.change.status === 'verified', 'close 后状态应为 verified')
@@ -151,7 +152,7 @@ async function main() {
   if (wr && wr.errors && wr.errors.length) console.log('  change 写入诊断: ' + JSON.stringify(wr.errors.map(e => e.code)))
   await batchWrite(projectDir, [await mod('demo-repo.pending', 'demo-repo', '未落地', 'Pending', '尚未实现',
     { source: [{ path: 'src/pending.ts' }], frontmatter: { state: 'planned', fingerprint: 'pending' } })], 'upsert', {})
-  const blockedClose = await closeChange(projectDir, '2026-09-12-e2e-stuck', { repoRoot: repo, activate: true })
+  const blockedClose = await closeChange(projectDir, '2026-09-12-e2e-stuck', { repoRoot: repo, bridge: new LocalBridge(repo), activate: true })
   assert(blockedClose.ok === false, 'create 清单未落地时 close 应被阻断')
   const still = await loadChangeFile(projectDir, '2026-09-12-e2e-stuck')
   console.log('  变更读取: ' + (still.change === null ? ('null err=' + JSON.stringify(still.error)) : still.change.status))

@@ -43,18 +43,18 @@ export declare function promoteModule(projectDir: string, id: string): Promise<{
     file: string;
     warnings: Diagnostic[];
 }>;
-/** 仓库当前 HEAD（40 位 SHA）。bridge 给定时经 bridge（SessionCacheBridge）；默认 LocalBridge(repoRoot)。 */
-export declare function gitHead(repoRoot: string, bridge?: RepoBridge): {
+/** 仓库当前 HEAD（40 位 SHA）。经 bridge（LocalBridge 或 SessionCacheBridge）。 */
+export declare function gitHead(bridge: RepoBridge): {
     sha: string | null;
     error: string | null;
 };
-/** git 变更文件清单（增量再生成的输入）。bridge 给定时经 bridge；默认 LocalBridge(repoRoot)。 */
-export declare function gitChangedFiles(repoRoot: string, diffSpec: string, bridge?: RepoBridge): {
+/** git 变更文件清单（增量再生成的输入）。经 bridge。 */
+export declare function gitChangedFiles(bridge: RepoBridge, diffSpec: string): {
     files: string[] | null;
     error: string | null;
 };
-/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。bridge 给定时经 bridge；默认 LocalBridge(repoRoot)。 */
-export declare function fingerprintOf(repoRoot: string, sources: SourceRef[], bridge?: RepoBridge): Promise<{
+/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。经 bridge。 */
+export declare function fingerprintOf(bridge: RepoBridge, sources: SourceRef[]): Promise<{
     hash: string | null;
     missing: string[];
 }>;

@@ -1,6 +1,8 @@
+import type { RepoBridge } from '../bridge.js';
 import type { ChangeData, Diagnostic } from './types.js';
 export interface CloseOptions {
     repoRoot?: string;
+    bridge?: RepoBridge;
     activate?: boolean;
     render?: boolean;
     note?: string;

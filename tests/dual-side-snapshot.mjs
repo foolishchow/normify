@@ -77,7 +77,7 @@ await (async () => {
 
     // LocalBridge 直算（client repo 本地）
     const localBridge = new LocalBridge(clientRepo);
-    const direct = await fingerprintOf(clientRepo, [{ path: 'src/a.ts' }, { path: 'src/b.ts' }], localBridge);
+    const direct = await fingerprintOf(localBridge, [{ path: 'src/a.ts' }, { path: 'src/b.ts' }]);
 
     await T('A-007 SessionCacheBridge fingerprint == LocalBridge 直算', () => {
         eq(httpParsed.ok, true);

@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import type { ToolBehavior, ToolEnv } from '../catalog.js';
 import { companionReminder } from '../companion.js';
-import { SessionManager, STDIO_SESSION_ID, createSessionState, parseAuthConfig } from '../session.js';
+import { SessionManager, STDIO_SESSION_ID, createSessionState, parseAuthConfig, pushSnapshot } from '../session.js';
 import type { SessionState } from '../session.js';
 import { SessionCacheBridge } from '../bridge.js';
 
@@ -102,7 +102,7 @@ if (transportMode === 'http') {
                     const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { sessionId?: string; files?: Record<string, string>; gitHead?: { sha: string | null; error: string | null }; gitChangedFiles?: { files: string[] | null; error: string | null } };
                     const st = body.sessionId ? sessionManager.get(body.sessionId) : undefined;
                     if (!st) { res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'session not found' })); return; }
-                    st.env.bridge = new SessionCacheBridge({ files: body.files ?? {}, gitHead: body.gitHead, gitChangedFiles: body.gitChangedFiles });
+                    pushSnapshot(st, new SessionCacheBridge({ files: body.files ?? {}, gitHead: body.gitHead, gitChangedFiles: body.gitChangedFiles }));
                     res.writeHead(200, { 'content-type': 'application/json' });
                     res.end(JSON.stringify({ ok: true, files: Object.keys(body.files ?? {}).length }));
                 }

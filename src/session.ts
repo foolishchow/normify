@@ -8,8 +8,9 @@ import type { ToolEntry, ToolEnv } from './catalog.js';
 import { buildCatalog } from './catalog.js';
 import type { CompanionConfig } from './companion.js';
 import { parseCompanionConfig } from './companion.js';
+import type { RepoBridge } from './bridge.js';
 
-/** 单会话状态。形状跨 stdio/http 一致（dual-side-mode DP2 复用）。 */
+/** SessionState：同形状（stdio 1/http N）。 */
 export interface SessionState {
     sessionId: string;
     userId: string | undefined;              // from token; undefined = default user
@@ -19,6 +20,14 @@ export interface SessionState {
     catalog: ToolEntry[];                     // per-session buildCatalog(env with userScope)
     /** DP4：会话 ToolEnv（可变 .bridge——pushSnapshot 后置 SessionCacheBridge，catalog 闭包调用时读 env.bridge）。 */
     env: ToolEnv;
+}
+
+/**
+ * arch-cleanup AP-003：R3 推送快照赋值。use-case 层只赋 env.bridge = bridge（认 RepoBridge 接口）；
+ * SessionCacheBridge 构造留 adapter（mcp/server.ts /snapshot handler）——session.ts 不 import 具体 infrastructure。
+ */
+export function pushSnapshot(state: SessionState, bridge: RepoBridge): void {
+    state.env.bridge = bridge;
 }
 
 /** token 解析出的身份。 */

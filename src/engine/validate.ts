@@ -1,5 +1,4 @@
-import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import type { RepoBridge } from '../bridge.js';
 import type { ChangeData, Diagnostic, LayoutData, ModuleFile, PolicyData } from './types.js';
 import { apiKey, depthOf, deriveParent, idFromFilePath, treeOf } from './ids.js';
 import { fingerprintOf, loadAllModules } from './store.js';
@@ -15,6 +14,7 @@ const BILINGUAL_CODES = new Set([
 ]);
 export interface ValidateOptions {
     repoRoot?: string;
+    bridge?: RepoBridge;
     requireBilingual: boolean;
 }
 export interface ValidateOutput {
@@ -294,7 +294,8 @@ export async function validateProject(projectDir: string, opts: ValidateOptions)
                     warnings.push(diag('warning', 'evidence/root-no-source', '根模块无 source（纯文档根）', { module: m.id }, {}, []));
                 continue;
             }
-            const missing = m.source.filter(s => !existsSync(join(repoRoot, s.path)));
+            const existsFlags = await Promise.all(m.source.map(s => opts.bridge!.exists(s.path)));
+            const missing = m.source.filter((_, i) => !existsFlags[i]);
             if (missing.length > 0) {
                 if (planned) {
                     warnings.push(diag('warning', 'structure/planned-source-missing', '计划态模块的 source 尚未落地（实现后刷新即可）', { module: m.id }, { missing: missing.map(s => s.path) }, ['实现对应文件后调用 normify_module_refresh({ ids: ["' + m.id + '"], activate: true })']));
@@ -309,7 +310,7 @@ export async function validateProject(projectDir: string, opts: ValidateOptions)
                     errors.push(diag('error', 'evidence/fingerprint-pending', '只有 planned 模块可以使用 fingerprint: pending', { module: m.id }, {}, ['用 normify_fingerprint 重算或把 state 改为 planned']));
                 continue;
             }
-            const fp = await fingerprintOf(repoRoot, m.source);
+            const fp = await fingerprintOf(opts.bridge!, m.source);
             if (fp.hash === null) {
                 errors.push(diag('error', 'evidence/fingerprint-unavailable', '无法计算 fingerprint（文件缺失）', { module: m.id }, { missing: fp.missing }, []));
             }

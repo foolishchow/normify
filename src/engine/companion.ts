@@ -1,5 +1,6 @@
 import { diag } from './diag.js';
 import { gitHead, loadAllModules as loadAllModulesForClose } from './store.js';
+import type { RepoBridge } from '../bridge.js';
 import { refreshModules } from './edit.js';
 import { validateProject } from './validate.js';
 import { buildProject } from './compile.js';
@@ -8,6 +9,7 @@ import { l1ValidateChange, loadChangeFile, writeChangeFile } from './changes.js'
 import type { ChangeData, Diagnostic } from './types.js';
 export interface CloseOptions {
     repoRoot?: string;
+    bridge?: RepoBridge;
     activate?: boolean;
     render?: boolean;
     note?: string;
@@ -52,7 +54,7 @@ export async function closeChange(projectDir: string, id: string, opts: CloseOpt
     if (repoRoot !== undefined) {
         const targets = [...new Set([...(change.modules.create ?? []), ...(change.modules.modify ?? [])])];
         if (targets.length > 0) {
-            const rr = await refreshModules(projectDir, { ids: targets, repoRoot, activate: opts.activate !== false });
+            const rr = await refreshModules(projectDir, { ids: targets, repoRoot, bridge: opts.bridge!, activate: opts.activate !== false });
             if (!rr.ok) {
                 return { ok: false, phase: 'refresh', errors: rr.errors, warnings: rr.warnings, change, hint: '先修正 refresh 报错（源码落地/路径/指纹），再关闭变更。' };
             }
@@ -77,7 +79,7 @@ export async function closeChange(projectDir: string, id: string, opts: CloseOpt
             };
         }
     }
-    const v = await validateProject(projectDir, { repoRoot, requireBilingual: opts.requireBilingual });
+    const v = await validateProject(projectDir, { repoRoot, bridge: opts.bridge, requireBilingual: opts.requireBilingual });
     if (!v.ok) {
         return {
             ok: false,
@@ -89,7 +91,7 @@ export async function closeChange(projectDir: string, id: string, opts: CloseOpt
             hint: '按 supportedFixes 修复后重试；变更保持 ' + change.status + '。',
         };
     }
-    const b = await buildProject(projectDir, { repoRoot, requireBilingual: opts.requireBilingual });
+    const b = await buildProject(projectDir, { repoRoot, bridge: opts.bridge, requireBilingual: opts.requireBilingual });
     if (!b.ok)
         return { ok: false, phase: 'build', errors: b.errors, warnings: v.warnings, change };
     let render: Record<string, unknown> | null = null;
@@ -100,7 +102,7 @@ export async function closeChange(projectDir: string, id: string, opts: CloseOpt
         render = { html: r.htmlPath, bytes: r.bytes, sha256: r.sha256 };
     }
     const now = new Date().toISOString();
-    const head = repoRoot !== undefined ? gitHead(repoRoot) : { sha: null };
+    const head = repoRoot !== undefined ? gitHead(opts.bridge!) : { sha: null };
     const updated = {
         ...change,
         status: 'verified',
@@ -114,7 +116,7 @@ export async function closeChange(projectDir: string, id: string, opts: CloseOpt
         return { ok: false, phase: 'change-write', errors: r.errors, warnings: r.warnings, change };
     const file = await writeChangeFile(projectDir, r.change);
     // 变更状态落盘后重建一次产物，让 tree.json/receipt 反映 change_count / open_change_count
-    const rebuilt = await buildProject(projectDir, { repoRoot, requireBilingual: opts.requireBilingual });
+    const rebuilt = await buildProject(projectDir, { repoRoot, bridge: opts.bridge, requireBilingual: opts.requireBilingual });
     if (!rebuilt.ok)
         return { ok: false, phase: 'rebuild', errors: rebuilt.errors, warnings: rebuilt.warnings, change: r.change };
     return {

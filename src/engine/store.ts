@@ -9,7 +9,6 @@ import { parseModuleText, serializeModule } from './frontmatter.js';
 import { deleteLayoutFile } from './layout.js';
 import { installDefaultPolicy } from './policy.js';
 import { diag } from './diag.js';
-import { LocalBridge } from '../bridge.js';
 import type { RepoBridge } from '../bridge.js';
 export const PROJECT_PREFIX = 'normify-';
 export class NormifyError extends Error {
@@ -297,17 +296,17 @@ export async function promoteModule(projectDir: string, id: string): Promise<{ f
     warnings.push(apiDropWarning(id, rel, stripped.dropped));
     return { file: rel, warnings };
 }
-/** 仓库当前 HEAD（40 位 SHA）。bridge 给定时经 bridge（SessionCacheBridge）；默认 LocalBridge(repoRoot)。 */
-export function gitHead(repoRoot: string, bridge?: RepoBridge): { sha: string | null; error: string | null } {
-    return (bridge ?? new LocalBridge(repoRoot)).gitHead();
+/** 仓库当前 HEAD（40 位 SHA）。经 bridge（LocalBridge 或 SessionCacheBridge）。 */
+export function gitHead(bridge: RepoBridge): { sha: string | null; error: string | null } {
+    return bridge.gitHead();
 }
-/** git 变更文件清单（增量再生成的输入）。bridge 给定时经 bridge；默认 LocalBridge(repoRoot)。 */
-export function gitChangedFiles(repoRoot: string, diffSpec: string, bridge?: RepoBridge): { files: string[] | null; error: string | null } {
-    return (bridge ?? new LocalBridge(repoRoot)).gitChangedFiles(diffSpec);
+/** git 变更文件清单（增量再生成的输入）。经 bridge。 */
+export function gitChangedFiles(bridge: RepoBridge, diffSpec: string): { files: string[] | null; error: string | null } {
+    return bridge.gitChangedFiles(diffSpec);
 }
-/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。bridge 给定时经 bridge；默认 LocalBridge(repoRoot)。 */
-export async function fingerprintOf(repoRoot: string, sources: SourceRef[], bridge?: RepoBridge): Promise<{ hash: string | null; missing: string[] }> {
-    const b = bridge ?? new LocalBridge(repoRoot);
+/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。经 bridge。 */
+export async function fingerprintOf(bridge: RepoBridge, sources: SourceRef[]): Promise<{ hash: string | null; missing: string[] }> {
+    const b = bridge;
     const paths = [...new Set(sources.map(s => s.path))].sort();
     const missing: string[] = [];
     const hash = createHash('sha256');

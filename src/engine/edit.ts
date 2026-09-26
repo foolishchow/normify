@@ -5,6 +5,7 @@ import { DEP_KINDS } from './types.js';
 import { diag } from './diag.js';
 import { deriveParent, isValidId, moduleFilePath, splitId } from './ids.js';
 import { loadAllModules, writeModuleFile, fingerprintOf, gitHead } from './store.js';
+import type { RepoBridge } from '../bridge.js';
 import { evaluatePolicy, loadPolicyFile } from './policy.js';
 import { l1Validate } from './frontmatter.js';
 import { deleteLayoutFile, layoutRelPath, loadLayoutFile, writeLayoutFile } from './layout.js';
@@ -634,6 +635,7 @@ export interface RefreshOptions extends EditOptions {
     ids?: string[];
     all?: boolean;
     repoRoot: string;
+    bridge: RepoBridge;
     activate?: boolean;
 }
 /** 重算 fingerprint/revision/updated_at；planned 模块落地后可用 activate 一键转 active。 */
@@ -657,7 +659,7 @@ export async function refreshModules(projectDir: string, opts: RefreshOptions): 
     if (targets.length === 0) {
         return { ok: false, dryRun: opts.dryRun === true, errors: [diag('error', 'refresh/no-target', '必须提供 ids 或 all:true', {}, {}, [])], warnings, changed: [], detail: {}, refreshed, missing };
     }
-    const head = gitHead(opts.repoRoot);
+    const head = gitHead(opts.bridge);
     if (head.sha === null) {
         // 0.5.4：repoRoot 不是 git 仓库时不再硬失败 —— 指纹照常重算，revision 保持原值并记 warning
         warnings.push(diag('warning', 'refresh/git-unavailable', '无法获取 git HEAD（' + (head.error ?? '未知原因') + '）：本次只重算 fingerprint/updated_at，revision 保持模块原值', { repoRoot: opts.repoRoot }, {}, ['在 repoRoot 下 git init && git commit 后重跑 refresh 即可写入真实 revision']));
@@ -687,7 +689,7 @@ export async function refreshModules(projectDir: string, opts: RefreshOptions): 
             }
             continue;
         }
-        const fp = await fingerprintOf(opts.repoRoot, m.source);
+        const fp = await fingerprintOf(opts.bridge, m.source);
         if (fp.hash === null) {
             if (activate) {
                 errorsOut.push(diag('error', 'refresh/activate-not-landed', '请求激活但 source 尚未落地：' + id, { module: id }, { missing: fp.missing }, ['先实现 source 指向的文件，或去掉 activate']));

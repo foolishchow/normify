@@ -1,9 +1,9 @@
 # Arch Cleanup
 
 - Action: `arch-cleanup`
-- Status: `ready`
+- Status: `complete`
 - Updated: 2026-09-27
-- Status authority: [Action Status](../STATUS.md)
+- Status authority: [Action Status](../../../STATUS.md)
 - Design source: clean-architecture 依赖方向审计（基于代码 grep 实证，见 Design inputs）
 
 ## Background
@@ -81,11 +81,11 @@ dual-side-mode 完成后做了一次 clean architecture 审计。整体依赖方
 
 | ID | Requirement | Observable condition | Planned evidence | Status |
 | --- | --- | --- | --- | --- |
-| A-001 | R-001 | `grep -n "LocalBridge" src/engine/*.ts` 全空（engine 零具体依赖）；store 三函数签名 `bridge: RepoBridge` 必传 | grep + tsc | pending |
-| A-002 | R-002 | 6 个 evidence 工具 handler（sync/fingerprint/validate/build/module_refresh/change_close）内 `args.repoRoot ? (env.bridge ?? new LocalBridge) : undefined`；validateProject/buildProject/refreshModules/closeChange opts 加 `bridge?` 透传；closeChange 保留 `gitHead(bridge)` 戳 revision.after | grep "bridge" src/engine/companion.ts 有 + closeChange 调 `gitHead(repoRoot, bridge)` + parity 27 + mcp-smoke 36 + companion-snapshot 3 | pending |
-| A-003 | R-003 | `pushSnapshot(state, bridge: RepoBridge)` 在 session.ts（只赋值）；server.ts `/snapshot` 构造 SessionCacheBridge + 调 pushSnapshot | grep "SessionCacheBridge" src/session.ts 空 + dual-side-snapshot 5 PASS | pending |
-| A-004 | R-004 | parity 27 + npm test 12 套 + ci-contract + tsc 0 全绿 | 测试输出 | pending |
-| A-005 | R-006 | "已知妥协"清单在本 README 显式记录（Non-goals 节） | grep "已知妥协" | pending |
+| A-001 | R-001 | `grep -rn "import.*LocalBridge\|new LocalBridge" src/engine/` 全空（engine 零具体依赖）；store 三函数签名 `bridge: RepoBridge` 必传 | grep + tsc | **passed** |
+| A-002 | R-002 | 6 evidence 工具 handler（sync/fingerprint/validate/build/module_refresh/change_close）构造 `args.repoRoot ? (env.bridge ?? new LocalBridge) : undefined`；validateProject/buildProject/refreshModules/closeChange opts 透传 bridge；closeChange 保留 `gitHead(bridge)` 戳 revision.after | grep "bridge" src/engine/companion.ts 有 + closeChange 调 `gitHead(opts.bridge!)` + parity 27 + npm test 12 套 | **passed** |
+| A-003 | R-003 | `pushSnapshot(state, bridge: RepoBridge)` 在 session.ts（只赋值）；server.ts `/snapshot` 构造 SessionCacheBridge + 调 pushSnapshot | grep "import.*SessionCacheBridge" src/session.ts 空 + dual-side-snapshot 5 PASS | **passed** |
+| A-004 | R-004 | parity 27 + npm test 12 套 + ci-contract + tsc 0 全绿 | 测试输出 | **passed** |
+| A-005 | R-006 | "已知妥协"清单在本 README Non-goals 节显式记录 | grep "已知妥协" | **passed** |
 
 ## Validation
 
@@ -95,6 +95,23 @@ dual-side-mode 完成后做了一次 clean architecture 审计。整体依赖方
 - AP-003：`grep -n "SessionCacheBridge" src/mcp/server.ts`（空）+ `node tests/dual-side-snapshot.mjs`（5 PASS）。
 - AP-004（若进）：`node tests/session-isolation.mjs`（13 PASS，改后）。
 - 全程：`node ci-contract-check.cjs`（绿）。
+
+## Execution
+
+user 2026-09-27 授权 in_progress → 执行 AP-001~AP-003。执行期决策（均在 R-001~R-003 精神内，无偏差）：
+
+1. **签名精炼**：store 三函数去掉冗余 `repoRoot` 参数（bridge 封装 repoRoot）→ `gitHead(bridge)`/`gitChangedFiles(bridge, diff)`/`fingerprintOf(bridge, sources)`。比 readiness 设计的 `gitHead(repoRoot, bridge)` 示例更纯（无死参数）；bridge 经 LocalBridge(repoRoot) 构造时内部已 join。所有调用者同步去 repoRoot 实参。
+2. **执行期扩展（existsSync bypass 修复）**：validate.ts:297 `existsSync(join(repoRoot, s.path))` — engine 直读 repoRoot 源文件系统，**绕过 bridge**。这是 latent dual-side bug（server 无 client fs → 全报 missing）。改为 `Promise.all(m.source.map(s => opts.bridge!.exists(s.path)))`（经 bridge）。与 R-002(ii)「透传到内部」同精神（同函数同目的），非范围漂移。同时删 validate.ts `import { existsSync }/join`（不再用）。
+3. **RefreshOptions.bridge 必填**：repoRoot 必填 → bridge 必填（catalog module_refresh + closeChange 内调时总传）。ValidateOptions/CloseOptions.bridge 可选（iff repoRoot）。
+4. **测试同步**：companion-e2e.mjs 直调 refreshModules/closeChange（3 处）+ fingerprintOf（1 处）补 `new LocalBridge(repo)`；dual-side-snapshot.mjs fingerprintOf 去 clientRoot 实参。
+
+验收结果（2026-09-27）：
+- `grep -rn "import.*LocalBridge\|new LocalBridge" src/engine/` → 空 ✓
+- `grep "import.*SessionCacheBridge" src/session.ts` → 空 ✓
+- `npx tsc --noEmit` → 0 ✓
+- `node tests/parity-differential.mjs` → 27 PASS ✓
+- `npm test` → 12 套全绿（engine-e2e/companion-e2e/regression×3/mcp-smoke 36/pi-projection 36/companion-snapshot 3/session-isolation 13/dual-side-http 5/dual-side-pi-client 6/dual-side-snapshot 5）✓
+- `node ci-contract-check.cjs` → 绿 ✓
 
 ## Readiness gaps
 
@@ -108,9 +125,13 @@ dual-side-mode 完成后做了一次 clean architecture 审计。整体依赖方
 
 **K=3 达成（R3/R4/R5 连续 0 medium+）→ readiness review PASS。** user 2026-09-27 授权 status → `ready`。
 
-## Closure conditions
+## Closure
 
-- 全部 MUST 验收（A-001~A-004）passed；R-005 MAY 满足或显式 defer 独立 Action；R-006 SHOULD 满足。
-- parity 27 + 12 套 npm test + ci-contract + tsc 0 全绿（向后兼容硬约束）。
-- 持久结论回流：本 README 记录"已知妥协"清单（engine node:fs / catalog 单文件 / edit+template 巨石）。
+user 2026-09-27 授权 close → complete。
+
+- 全部 MUST 验收（A-001~A-005）**passed**（R-005 MAY 显式 defer 独立 Action、R-006 SHOULD 满足）。
+- parity 27 + 12 套 npm test + ci-contract + tsc 0 全绿（向后兼容硬约束达成）。
+- 持久结论回流：
+  - 本 README Non-goals 节记录「已知妥协」清单（engine node:fs 读写 rootDir 图数据 / catalog 单文件 / edit+template 巨石）。
+  - 执行期额外修复 validate.ts:297 existsSync bypass（latent dual-side bug），engine 对 repoRoot 的 fs 访问现全经 bridge。
 - 状态、路径、导航、归档一致。

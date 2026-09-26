@@ -852,7 +852,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         }, []),
     }, async (args: RepoRootArgs) => {
         const proj = await resolve(args);
-        const v = await validateProject(proj.dir, { repoRoot: args.repoRoot, requireBilingual: env.requireBilingual });
+        const v = await validateProject(proj.dir, { repoRoot: args.repoRoot, bridge: typeof args.repoRoot === 'string' ? (env.bridge ?? new LocalBridge(args.repoRoot)) : undefined, requireBilingual: env.requireBilingual });
         return diagnosticsOut(v.errors, v.warnings);
     });
     register('normify_build', {
@@ -864,7 +864,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         }, []),
     }, async (args: RepoRootArgs) => {
         const proj = await resolve(args);
-        const b = await buildProject(proj.dir, { repoRoot: args.repoRoot, requireBilingual: env.requireBilingual });
+        const b = await buildProject(proj.dir, { repoRoot: args.repoRoot, bridge: typeof args.repoRoot === 'string' ? (env.bridge ?? new LocalBridge(args.repoRoot)) : undefined, requireBilingual: env.requireBilingual });
         if (!b.ok) {
             return { ok: false, errors: b.errors.map(fmtDiag), warnings: b.warnings.map(fmtDiag), summary: b.errors.length + ' error（未产出任何产物）' };
         }
@@ -883,7 +883,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         const repoRoot = String(args.repoRoot);
         const diff = args.diff;
         const bridge: RepoBridge = env.bridge ?? new LocalBridge(repoRoot);
-        const changed = gitChangedFiles(repoRoot, diff ?? '', bridge);
+        const changed = gitChangedFiles(bridge, diff ?? '');
         if (changed.files === null) {
             return { ok: false, error: { code: 'sync/git-failed', message: changed.error ?? 'git 不可用' } };
         }
@@ -901,7 +901,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         }
         const drift: string[] = [];
         for (const f of affected) {
-            const fp = await fingerprintOf(repoRoot, f.module.source, bridge);
+            const fp = await fingerprintOf(bridge, f.module.source);
             if (fp.hash !== null && fp.hash !== f.module.fingerprint)
                 drift.push(f.module.id);
         }
@@ -1217,7 +1217,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         const repoRoot = String(args.repoRoot);
         const sources = Array.isArray(args.source) ? args.source : [];
         const bridge: RepoBridge = env.bridge ?? new LocalBridge(repoRoot);
-        const fp = await fingerprintOf(repoRoot, sources, bridge);
+        const fp = await fingerprintOf(bridge, sources);
         return {
             ok: fp.missing.length === 0,
             fingerprint: fp.hash,
@@ -1524,10 +1524,13 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         if ((ids === undefined || ids.length === 0) && args.all !== true) {
             return { ok: false, error: { code: 'refresh/no-target', message: '必须提供 ids 或 all:true' } };
         }
+        const repoRoot = String(args.repoRoot);
+        const bridge: RepoBridge = env.bridge ?? new LocalBridge(repoRoot);
         const r = await refreshModules(proj.dir, {
             ids,
             all: args.all === true,
-            repoRoot: String(args.repoRoot),
+            repoRoot,
+            bridge,
             activate: args.activate === true,
             dryRun: args.dry_run === true,
         });
@@ -1687,6 +1690,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         const proj = await resolve(args);
         const r = await closeChange(proj.dir, String(args.id), {
             repoRoot: typeof args.repoRoot === 'string' ? args.repoRoot : undefined,
+            bridge: typeof args.repoRoot === 'string' ? (env.bridge ?? new LocalBridge(args.repoRoot)) : undefined,
             activate: args.activate !== false,
             render: args.render === true,
             note: typeof args.note === 'string' ? args.note : undefined,

@@ -1,7 +1,9 @@
+import type { RepoBridge } from '../bridge.js';
 import type { ChangeData, Diagnostic, LayoutData, ModuleFile, PolicyData } from './types.js';
 import { depthOf, deriveParent, treeOf } from './ids.js';
 export interface ValidateOptions {
     repoRoot?: string;
+    bridge?: RepoBridge;
     requireBilingual: boolean;
 }
 export interface ValidateOutput {
