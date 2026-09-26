@@ -1,11 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEP_KINDS, PROTOCOLS } from './engine/types.js';
 import { l1Validate } from './engine/frontmatter.js';
 import { apiKey, isValidId, slugify, splitId } from './engine/ids.js';
 import { NormifyError, deleteModuleTree, fingerprintOf, gitChangedFiles, listProjects, loadAllModules, promoteModule, resolveProject, writeModuleFile } from './engine/store.js';
+import { LocalBridge } from './bridge.js';
+import type { RepoBridge } from './bridge.js';
 import { LAYOUT_SCHEMA_VERSION, deleteLayoutFile, edgeKey, l1ValidateLayout, layoutRelPath, listLayoutFiles, loadLayoutFile, writeLayoutFile } from './engine/layout.js';
 import { batchWrite, checkProposal, moveModuleTree, patchModule, previewModuleFile, refreshModules } from './engine/edit.js';
 import { POLICY_SCHEMA_VERSION, defaultPolicyTemplate, evaluatePolicy, l1ValidatePolicy, loadPolicyFile, policyReference, writePolicyFile } from './engine/policy.js';
@@ -27,6 +28,8 @@ export interface ToolEnv {
     userScope?: string;
     /** session-isolation：auth 项目 allowlist。undefined=全可见（无 auth）。给定则 project slug 必须在列。 */
     projectAllowlist?: string[];
+    /** dual-side-mode DP1：仓库桥。undefined=LocalBridge(repoRoot)（DSH/stdio，向后兼容）；SessionCacheBridge（DP4）从 R3 推送快照读。 */
+    bridge?: RepoBridge;
 }
 
 /** JSON Schema 节点（作者态：属性级内联 required: true；编译后对象级为 required: string[]）。 */
@@ -879,7 +882,8 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         const proj = await resolve(args);
         const repoRoot = String(args.repoRoot);
         const diff = args.diff;
-        const changed = gitChangedFiles(repoRoot, diff ?? '');
+        const bridge: RepoBridge = env.bridge ?? new LocalBridge(repoRoot);
+        const changed = gitChangedFiles(repoRoot, diff ?? '', bridge);
         if (changed.files === null) {
             return { ok: false, error: { code: 'sync/git-failed', message: changed.error ?? 'git 不可用' } };
         }
@@ -897,7 +901,7 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         }
         const drift: string[] = [];
         for (const f of affected) {
-            const fp = await fingerprintOf(repoRoot, f.module.source);
+            const fp = await fingerprintOf(repoRoot, f.module.source, bridge);
             if (fp.hash !== null && fp.hash !== f.module.fingerprint)
                 drift.push(f.module.id);
         }
@@ -910,8 +914,24 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
         const newFiles = changed.files
             .filter(cf => CODE_EXT.test(cf) && !IGNORE_DIR.test(cf) && !files.some(f => f.module.source.some(s => s.path === cf || cf.startsWith(s.path + '/') || s.path.startsWith(cf + '/'))))
             .sort((a, b) => kindRank(a) - kindRank(b) || a.localeCompare(b));
-        const deletedFiles = changed.files.filter(cf => !existsSync(join(repoRoot, cf)));
-        const staleModules = files.filter(f => f.module.source.length > 0 && f.module.source.some(s => !existsSync(join(repoRoot, s.path)))).map(f => ({ id: f.module.id, missing: f.module.source.filter(s => !existsSync(join(repoRoot, s.path))).map(s => s.path) }));
+        // DP1：existsSync 经 bridge（LocalBridge=fs；SessionCacheBridge=pushed 快照）。filter 同步回调→预计算。
+        const deletedFiles: string[] = [];
+        for (const cf of changed.files) {
+            if (!(await bridge.exists(cf)))
+                deletedFiles.push(cf);
+        }
+        const staleModules: { id: string; missing: string[] }[] = [];
+        for (const f of files) {
+            if (f.module.source.length > 0) {
+                const miss: string[] = [];
+                for (const s of f.module.source) {
+                    if (!(await bridge.exists(s.path)))
+                        miss.push(s.path);
+                }
+                if (miss.length > 0)
+                    staleModules.push({ id: f.module.id, missing: miss });
+            }
+        }
         const suggestedModules = newFiles.slice(0, 20).map(cf => {
             const dir = cf.includes('/') ? cf.slice(0, cf.lastIndexOf('/')) : '';
             let parent: string | null = null;
@@ -931,7 +951,20 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
             return { file: cf, suggested_parent: parent, suggested_id: valid ? id : null, state: 'planned' };
         });
         const plannedRemaining = files.filter(f => f.module.state === 'planned').map(f => f.module.id);
-        const activateCandidates = files.filter(f => f.module.state === 'planned' && f.module.source.length > 0 && f.module.source.every(s => existsSync(join(repoRoot, s.path)))).map(f => f.module.id);
+        const activateCandidates: string[] = [];
+        for (const f of files) {
+            if (f.module.state === 'planned' && f.module.source.length > 0) {
+                let allExist = true;
+                for (const s of f.module.source) {
+                    if (!(await bridge.exists(s.path))) {
+                        allExist = false;
+                        break;
+                    }
+                }
+                if (allExist)
+                    activateCandidates.push(f.module.id);
+            }
+        }
         const apiAdded: ApiDiffRow[] = [];
         const apiRemoved: ApiDiffRow[] = [];
         const breakingApiRemovals: BreakingApiRow[] = [];
@@ -1183,7 +1216,8 @@ export function buildCatalog(env: ToolEnv): ToolEntry[] {
     }, async (args: FingerprintArgs) => {
         const repoRoot = String(args.repoRoot);
         const sources = Array.isArray(args.source) ? args.source : [];
-        const fp = await fingerprintOf(repoRoot, sources);
+        const bridge: RepoBridge = env.bridge ?? new LocalBridge(repoRoot);
+        const fp = await fingerprintOf(repoRoot, sources, bridge);
         return {
             ok: fp.missing.length === 0,
             fingerprint: fp.hash,

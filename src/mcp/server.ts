@@ -1,33 +1,33 @@
-// MCP server (stdio)：把 normify catalog 暴露给 Claude / Cursor / Codex 等宿主。
+// MCP server：把 normify catalog 暴露给 Claude / Cursor / Codex / pi 等宿主。
 // 平台无关：直接复用 buildCatalog + ToolEntry.execute（不重声明工具、不重裹 execute）。
 // ToolEnv 从环境变量读：NORMIFY_ROOT_DIR（默认 cwd）、NORMIFY_REQUIRE_BILINGUAL（默认 '1'→true）。
-// session-isolation：经 SessionManager（src/session.ts）建 1 stdio session（固定 id），
-//   catalog/companionCount 改 per-session（堵多用户共享 bug）；userScope 经 token 注入（auth 脚手架）。
-//   http 多 session 复用同一 SessionManager（dual-side-mode DP2）。
+// session-isolation：经 SessionManager（src/session.ts）建 session，catalog/companionCount per-session。
+// dual-side-mode DP2：NORMIFY_TRANSPORT=stdio（默认，1 session）| http（StreamableHTTPServerTransport，
+//   stateful transport-per-session，每会话独立 Server + SessionState，多 agent 连同一 server）。
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import { readFileSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
-import { buildCatalog } from '../catalog.js';
 import type { ToolBehavior, ToolEnv } from '../catalog.js';
 import { companionReminder } from '../companion.js';
 import { SessionManager, STDIO_SESSION_ID, createSessionState, parseAuthConfig } from '../session.js';
+import type { SessionState } from '../session.js';
+import { SessionCacheBridge } from '../bridge.js';
 
-// 服务器级配置（非 per-session）：rootDir base + requireBilingual + authConfig + companionEnv
+// 服务器级配置（非 per-session）：rootDir base + requireBilingual + authConfig
 const baseEnv: ToolEnv = {
     rootDir: process.env.NORMIFY_ROOT_DIR ?? process.cwd(),
     requireBilingual: (process.env.NORMIFY_REQUIRE_BILINGUAL ?? '1') !== '0',
 };
 const authConfig = parseAuthConfig(process.env);
-
-// session-isolation：SessionManager（stdio 1 session / http N session 同形状）
+const version = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
 const sessionManager = new SessionManager();
-// stdio：synthesize 1 固定 session（MCP stdio 协议无 session-id；单连接）。token 经 env 注入（scaffolding）。
-const stdioState = createSessionState(STDIO_SESSION_ID, baseEnv, process.env.NORMIFY_SERVER_TOKEN, authConfig);
-sessionManager.create(stdioState);
 
 // §3.1 behavior → MCP annotations 映射：read/idempotent→readOnlyHint:true、write→readOnlyHint:false、destroy→destructiveHint:true
 function annotationsFor(behavior: ToolBehavior): ToolAnnotations {
@@ -40,13 +40,9 @@ function annotationsFor(behavior: ToolBehavior): ToolAnnotations {
 }
 
 // {ok:false} 错误载荷 → 模型可读文本（非裸 JSON）
-// 简单形状 {error:{code,message}} → '[code] message'
-// 富形状 {errors[],summary?,warnings?,hint?} → summary + errors.join('\n') [+ warnings/hint]
-// 防御：既无 error 又无 errors（当前 31 工具不存在，契约 unknown 兜底）→ JSON.stringify
 function errorText(value: { error?: { code: string; message: string }; errors?: string[]; warnings?: string[]; summary?: string; hint?: string }): string {
     if (value.error) return `[${value.error.code}] ${value.error.message}`;
     if (value.errors?.length) {
-        // 仅当 summary 真值才入列（7/13 富错误无 summary，避免前导空行）
         const parts: string[] = [];
         if (value.summary) parts.push(value.summary);
         parts.push(value.errors.join('\n'));
@@ -57,40 +53,116 @@ function errorText(value: { error?: { code: string; message: string }; errors?: 
     return JSON.stringify(value, null, 2);
 }
 
-// tsconfig 无 resolveJsonModule → 用 readFileSync 读版本（lib/mcp/server.js → ../../package.json）
-const version = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
-const server = new Server({ name: 'normify', version }, { capabilities: { tools: {} } });
-
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-    const state = sessionManager.get(STDIO_SESSION_ID)!;
-    return { tools: state.catalog.map(e => ({ name: e.name, description: e.description, inputSchema: e.parameters, annotations: annotationsFor(e.behavior) })) };
-});
-
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    const state = sessionManager.get(STDIO_SESSION_ID)!;
-    const entry = state.catalog.find(e => e.name === req.params.name);
-    if (!entry) return { content: [{ type: 'text', text: `未知工具：${req.params.name}` }], isError: true };
-    const value = await entry.execute(req.params.arguments ?? {});
-    // ToolEntry.execute 是 wrapped（不抛业务错）：返 {ok:true,...} | {ok:false,error} | string | 对象
-    // isError 仅当「对象且 ok===false」；字符串/无 ok 字段的对象视为成功（避免把字符串结果误判为 error）。
-    const isError = typeof value === 'object' && value !== null && (value as { ok?: unknown }).ok === false;
-    const content = [{ type: 'text' as const, text: isError ? errorText(value as Parameters<typeof errorText>[0]) : (typeof value === 'string' ? value : JSON.stringify(value, null, 2)) }];
-    // §5.1 S5 companion（session-isolation：per-session 计数）：companionConfig.enabled && behavior!=='read' → ++count → 达阈值重置 + 仅 !isError 时 push reminder
-    if (state.companionConfig.enabled && entry.behavior !== 'read') {
-        state.companionCount++;
-        if (state.companionCount >= state.companionConfig.threshold) {
-            state.companionCount = 0;
-            if (!isError) content.push({ type: 'text', text: companionReminder(state.companionConfig.threshold) });
+// 注册 MCP handlers，用 getState 闭包取当前 session 的 SessionState（stdio=http 同形状，transport 无关）
+function registerHandlers(server: Server, getState: () => SessionState): void {
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+        const state = getState();
+        return { tools: state.catalog.map(e => ({ name: e.name, description: e.description, inputSchema: e.parameters, annotations: annotationsFor(e.behavior) })) };
+    });
+    server.setRequestHandler(CallToolRequestSchema, async (req) => {
+        const state = getState();
+        const entry = state.catalog.find(e => e.name === req.params.name);
+        if (!entry) return { content: [{ type: 'text', text: `未知工具：${req.params.name}` }], isError: true };
+        const value = await entry.execute(req.params.arguments ?? {});
+        const isError = typeof value === 'object' && value !== null && (value as { ok?: unknown }).ok === false;
+        const content = [{ type: 'text' as const, text: isError ? errorText(value as Parameters<typeof errorText>[0]) : (typeof value === 'string' ? value : JSON.stringify(value, null, 2)) }];
+        // §5.1 S5 companion（session-isolation per-session 计数）：companionConfig.enabled && behavior!=='read' → ++count → 达阈值重置 + 仅 !isError 时 push reminder
+        if (state.companionConfig.enabled && entry.behavior !== 'read') {
+            state.companionCount++;
+            if (state.companionCount >= state.companionConfig.threshold) {
+                state.companionCount = 0;
+                if (!isError) content.push({ type: 'text', text: companionReminder(state.companionConfig.threshold) });
+            }
         }
-    }
-    return {
-        content,
-        isError,
-    };
-});
+        return { content, isError };
+    });
+}
 
-// main guard：smoke 可能用相对路径 spawn，resolve(argv[1]) 对齐 fileURLToPath(import.meta.url) 的绝对路径
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
+function buildServer(): Server {
+    return new Server({ name: 'normify', version }, { capabilities: { tools: {} } });
+}
+
+const transportMode = (process.env.NORMIFY_TRANSPORT ?? 'stdio').toLowerCase();
+
+if (transportMode === 'http') {
+    // DP2 HTTP：transport-per-session（SDK stateful 模式；同 transport 二次 initialize 被拒 400 → 每会话独立 transport+Server）
+    const port = Number(process.env.NORMIFY_PORT ?? '3000');
+    // sessionId → { transport, server }；token 经 env 注入（DP2 scaffolding，DP4 改 per-session header）
+    const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: Server }>();
+    const token = process.env.NORMIFY_SERVER_TOKEN;
+
+    const httpServer = createHttpServer((req, res) => {
+        // DP4 R3 推送快照：POST /snapshot {sessionId, files:{path:base64}, gitHead?, gitChangedFiles?}
+        // → 置 SessionState.env.bridge = SessionCacheBridge（catalog 闭包调用时读 env.bridge）
+        if (req.method === 'POST' && req.url?.startsWith('/snapshot')) {
+            const chunks: Buffer[] = [];
+            req.on('data', (c: Buffer) => chunks.push(c));
+            req.on('end', () => {
+                try {
+                    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { sessionId?: string; files?: Record<string, string>; gitHead?: { sha: string | null; error: string | null }; gitChangedFiles?: { files: string[] | null; error: string | null } };
+                    const st = body.sessionId ? sessionManager.get(body.sessionId) : undefined;
+                    if (!st) { res.writeHead(404); res.end(JSON.stringify({ ok: false, error: 'session not found' })); return; }
+                    st.env.bridge = new SessionCacheBridge({ files: body.files ?? {}, gitHead: body.gitHead, gitChangedFiles: body.gitChangedFiles });
+                    res.writeHead(200, { 'content-type': 'application/json' });
+                    res.end(JSON.stringify({ ok: true, files: Object.keys(body.files ?? {}).length }));
+                }
+                catch (e) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: String(e) })); }
+            });
+            return;
+        }
+        // 读 body（NDJSON 或 JSON-RPC 批）
+        const chunks: Buffer[] = [];
+        req.on('data', (c: Buffer) => chunks.push(c));
+        req.on('end', () => {
+            const bodyRaw = Buffer.concat(chunks).toString('utf8');
+            let parsedBody: unknown = undefined;
+            if (bodyRaw.length > 0) {
+                try { parsedBody = JSON.parse(bodyRaw); }
+                catch { /* 交给 transport 兜底 */ }
+            }
+            const sid = typeof req.headers['mcp-session-id'] === 'string' ? req.headers['mcp-session-id'] as string : undefined;
+            const entry = sid ? sessions.get(sid) : undefined;
+            if (entry) {
+                // 后续请求：路由到已有 transport
+                entry.transport.handleRequest(req, res, parsedBody).catch((e) => { console.error('mcp handleRequest:', e); if (!res.headersSent) { res.writeHead(500); res.end(); } });
+                return;
+            }
+            // 新 initialize（无 sid）：建新 transport+Server，handleRequest 后 sid 落定
+            const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => randomUUID() });
+            const server = buildServer();
+            registerHandlers(server, () => {
+                const st = sessionManager.get(transport.sessionId ?? '');
+                if (!st) throw new Error('session not found: ' + transport.sessionId);
+                return st;
+            });
+            server.connect(transport).then(() => {
+                transport.handleRequest(req, res, parsedBody).then(() => {
+                    const newSid = transport.sessionId;
+                    if (newSid) {
+                        sessions.set(newSid, { transport, server });
+                        // 建 SessionState（per-session catalog + companionCount；token 经 env，DP4 改 header）
+                        if (!sessionManager.get(newSid)) {
+                            sessionManager.create(createSessionState(newSid, baseEnv, token, authConfig));
+                        }
+                        // R-007 SHOULD：transport onclose → session 清理
+                        transport.onclose = () => { sessions.delete(newSid); sessionManager.delete(newSid); };
+                    }
+                }).catch((e) => { console.error('mcp handleRequest (new):', e); if (!res.headersSent) { res.writeHead(500); res.end(); } });
+            }).catch((e) => { console.error('mcp connect:', e); if (!res.headersSent) { res.writeHead(500); res.end(); } });
+        });
+    });
+    httpServer.listen(port, () => {
+        console.log(`normify MCP HTTP server on :${port} (rootDir=${baseEnv.rootDir})`);
+    });
+}
+else {
+    // stdio（默认，1 session）：synthesize 固定 STDIO_SESSION_ID
+    const stdioState = createSessionState(STDIO_SESSION_ID, baseEnv, process.env.NORMIFY_SERVER_TOKEN, authConfig);
+    sessionManager.create(stdioState);
+    const server = buildServer();
+    registerHandlers(server, () => sessionManager.get(STDIO_SESSION_ID)!);
+    if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+        const transport = new StdioServerTransport();
+        await server.connect(transport);
+    }
 }

@@ -110,7 +110,9 @@ S0–S6 的 27 PASS（parity）+ 8 套 npm test + companion-snapshot 全用 `roo
 | transport | **仅 stdio**（1 session 验证抽象）；HTTP 在 dual-side-mode |
 | 向后兼容 | 无 token 路径不变；27 PASS + 9 套 npm test 全绿（含 session-isolation 13） |
 
-## 7. Bridge 抽象（dual-side-mode，依赖 session-isolation）
+## 7. Bridge 抽象（dual-side-mode，依赖 session-isolation）　✅ 已完成
+
+> 实施完成（2026-09-25）：`src/bridge.ts`（`RepoBridge` 接口 + `LocalBridge` 包 fs+git + `SessionCacheBridge` DP4 从推送快照读）；`store.ts` 3 engine 函数加可选 `bridge?`（默认 LocalBridge，向后兼容）；`ToolEnv.bridge?`；sync inline `existsSync`→`await bridge.exists`（sync→async 预计算）；`SessionState.env`（可变 .bridge）；`POST /snapshot` 路由（R3 推送→`SessionState.env.bridge=SessionCacheBridge`）。R3 推送选 HTTP `/snapshot` 端点（非 MCP 自定义 method——SDK 不确定 + 不破坏 31 工具约束；R-007 SHOULD fallback）。
 
 证据工具的 repoRoot 访问经 Bridge，图编辑工具的项目数据 fs 不经 Bridge。
 

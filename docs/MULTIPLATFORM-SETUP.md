@@ -56,6 +56,55 @@ normify 提供 3 个适配器入口（共享同一 catalog，31 个工具零逻�
 - SKILL.md：`~/.pi/agent/skills/normify-gen/`，或 settings `"skills": ["<repo>/skills"]`
 - 验证：pi 会话 `/reload` 后调 `normify_help topic=tools` → 31 工具
 
+## 4. Dual-Side Mode（多 agent 连同一 server）
+
+- 场景：多 agent（Claude Code / Cursor / Codex / pi）共享单一 catalog/engine 实现；server 长驻，agent 作瘦客户端。
+- 设计：`docs/SERVER-MODE.md`。per-user 图隔离（模型 i：路径 `rootDir/[<userId>/]normify-<slug>/`）；Bridge 抽象 repoRoot 访问（LocalBridge=本地 fs；SessionCacheBridge=R3 推送快照，server 不访 client fs）。
+
+### 4.1 起 server（stdio 或 http）
+
+```bash
+# stdio（单用户本地，向后兼容；config 指向 command）
+NORMIFY_ROOT_DIR=<project> node lib/mcp/server.js
+
+# http（多 agent；多 session 复用 SessionManager）
+NORMIFY_TRANSPORT=http NORMIFY_PORT=3000 NORMIFY_ROOT_DIR=<rootDir> node lib/mcp/server.js
+```
+
+- env：`NORMIFY_ROOT_DIR`（图数据库根，≠ repoRoot）、`NORMIFY_TRANSPORT`（`stdio` 默认 / `http`）、`NORMIFY_PORT`（http 默认 3000）、`NORMIFY_REQUIRE_BILINGUAL`（默认 1）。
+- auth（可选）：`NORMIFY_AUTH_TOKENS`=`JSON {"tok":{"userId":"alice","projects":["demo-repo"]}}` → token→userId+projectAllowlist；无 token=default user+全可见（向后兼容）。stdio token 经 `NORMIFY_SERVER_TOKEN` 注入。
+
+### 4.2 客户端连法
+
+| 宿主 | 连法 |
+| --- | --- |
+| Claude Code / Cursor / Codex | MCP config 指向 `http://<host>:<port>/mcp`（内置 MCP client，零代码）|
+| pi | 瘦客户端扩展 `src/pi/normify-client.ts`（MCP `StreamableHTTPClientTransport` → `pi.registerTool` 桥；`NORMIFY_MCP_URL=http://<host>:<port>/mcp`）|
+
+### 4.3 R3 推送快照（证据工具经 SessionCacheBridge）
+
+证据工具（`normify_fingerprint`/`sync`/`validate`+repoRoot/`module_refresh`/`build`+repoRoot）是快照校验，不需 live fs。client 调前先推快照：
+
+```bash
+curl -X POST http://<host>:<port>/snapshot -H 'content-type: application/json' \
+  -d '{"sessionId":"<mcp-session-id>","files":{"src/a.ts":"<base64>"},"gitHead":{"sha":"...","error":null},"gitChangedFiles":{"files":[...],"error":null}}'
+```
+
+- server 置 `SessionState.env.bridge = SessionCacheBridge`（catalog 闭包调用时读 `env.bridge`）；`normify_fingerprint` 等经 cache 算，不直读 client fs。
+- 与 stdio 路径（LocalBridge 直读本地 fs）向后兼容；无 `env.bridge` 时回退 LocalBridge。
+
+### 4.4 companion split
+
+- server-side：`SessionState.companionCount`（per-session，计 normify_* `behavior!=='read'` 调用）。
+- pi-client-side：`createCompanionHandler`（WRITE_TOOLS，计 pi 外部写/edit），在瘦客户端内（不拉 engine）。
+
+### 4.5 验证
+
+- `npm test`：12 套全绿（含 dual-side-http 5 / dual-side-pi-client 6 / dual-side-snapshot 5）。
+- parity：`node tests/parity-differential.mjs`（27 PASS，DSH-direct vs MCP-protocol 等价）。
+- 两并发 HTTP session companion 互不干扰（`tests/dual-side-http.mjs` A-004）。
+- SessionCacheBridge fingerprint == LocalBridge 直算（`tests/dual-side-snapshot.mjs` A-007）。
+
 ## 故障排查（SHOULD）
 
 - 工具不见：检查入口路径 + 宿主 env；MCP 需 stdio 握手；pi 需 .ts（非 .js）+ /reload

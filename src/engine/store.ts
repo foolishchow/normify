@@ -4,12 +4,13 @@ import { readdir, readFile, writeFile, rename, rm, mkdir } from 'node:fs/promise
 import { existsSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve, relative, sep } from 'node:path';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import { deriveParent, isValidId, moduleFilePath, slugify } from './ids.js';
 import { parseModuleText, serializeModule } from './frontmatter.js';
 import { deleteLayoutFile } from './layout.js';
 import { installDefaultPolicy } from './policy.js';
 import { diag } from './diag.js';
+import { LocalBridge } from '../bridge.js';
+import type { RepoBridge } from '../bridge.js';
 export const PROJECT_PREFIX = 'normify-';
 export class NormifyError extends Error {
     code: string;
@@ -296,53 +297,29 @@ export async function promoteModule(projectDir: string, id: string): Promise<{ f
     warnings.push(apiDropWarning(id, rel, stripped.dropped));
     return { file: rel, warnings };
 }
-/** 仓库当前 HEAD（40 位 SHA）。 */
-export function gitHead(repoRoot: string): { sha: string | null; error: string | null } {
-    const result = spawnSync('git', ['-C', repoRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
-    if (result.error !== undefined)
-        return { sha: null, error: 'git 不可用：' + result.error.message };
-    if (result.status !== 0)
-        return { sha: null, error: 'git rev-parse 失败：' + String(result.stderr ?? '').slice(0, 200) };
-    const sha = String(result.stdout).trim();
-    if (!/^[a-f0-9]{40}$/.test(sha))
-        return { sha: null, error: 'git HEAD 不是 40 位 SHA：' + sha };
-    return { sha, error: null };
+/** 仓库当前 HEAD（40 位 SHA）。bridge 给定时经 bridge（SessionCacheBridge）；默认 LocalBridge(repoRoot)。 */
+export function gitHead(repoRoot: string, bridge?: RepoBridge): { sha: string | null; error: string | null } {
+    return (bridge ?? new LocalBridge(repoRoot)).gitHead();
 }
-/** git 变更文件清单（增量再生成的输入）。 */
-export function gitChangedFiles(repoRoot: string, diffSpec: string): { files: string[] | null; error: string | null } {
-    const spec = diffSpec.trim() === '' ? 'HEAD' : diffSpec.trim();
-    const result = spawnSync('git', ['-C', repoRoot, 'diff', '--name-only', spec], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-    if (result.error !== undefined) {
-        return { files: null, error: 'git 不可用：' + result.error.message };
-    }
-    if (result.status !== 0) {
-        return { files: null, error: 'git diff 失败（exit ' + result.status + '）：' + String(result.stderr ?? '').slice(0, 300) };
-    }
-    const changed = String(result.stdout).split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
-    // 新增但未 add 的文件（AI 开发中最常见的“新文件”形态）也纳入同步建议
-    const untracked = spawnSync('git', ['-C', repoRoot, 'ls-files', '--others', '--exclude-standard'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-    if (untracked.error === undefined && untracked.status === 0) {
-        for (const f of String(untracked.stdout).split(/\r?\n/).map(s => s.trim())) {
-            if (f.length > 0 && !changed.includes(f))
-                changed.push(f);
-        }
-    }
-    return { files: changed, error: null };
+/** git 变更文件清单（增量再生成的输入）。bridge 给定时经 bridge；默认 LocalBridge(repoRoot)。 */
+export function gitChangedFiles(repoRoot: string, diffSpec: string, bridge?: RepoBridge): { files: string[] | null; error: string | null } {
+    return (bridge ?? new LocalBridge(repoRoot)).gitChangedFiles(diffSpec);
 }
-/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。 */
-export async function fingerprintOf(repoRoot: string, sources: SourceRef[]): Promise<{ hash: string | null; missing: string[] }> {
+/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。bridge 给定时经 bridge；默认 LocalBridge(repoRoot)。 */
+export async function fingerprintOf(repoRoot: string, sources: SourceRef[], bridge?: RepoBridge): Promise<{ hash: string | null; missing: string[] }> {
+    const b = bridge ?? new LocalBridge(repoRoot);
     const paths = [...new Set(sources.map(s => s.path))].sort();
     const missing: string[] = [];
     const hash = createHash('sha256');
     for (const p of paths) {
-        try {
-            const buf = await readFile(join(repoRoot, p));
+        const r = await b.readFile(p);
+        if (!r.ok) {
+            missing.push(p);
+        }
+        else {
             hash.update(p);
             hash.update('\0');
-            hash.update(buf);
-        }
-        catch {
-            missing.push(p);
+            hash.update(r.bytes);
         }
     }
     return { hash: missing.length > 0 ? null : hash.digest('hex'), missing };

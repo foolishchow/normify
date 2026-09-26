@@ -8,7 +8,8 @@ export interface SessionState {
     companionCount: number;
     companionConfig: CompanionConfig;
     catalog: ToolEntry[];
-    cacheBridge?: unknown;
+    /** DP4：会话 ToolEnv（可变 .bridge——pushSnapshot 后置 SessionCacheBridge，catalog 闭包调用时读 env.bridge）。 */
+    env: ToolEnv;
 }
 /** token 解析出的身份。 */
 export interface AuthIdentity {

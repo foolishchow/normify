@@ -1,10 +1,10 @@
 # Dual-Side Mode
 
 - Action: `dual-side-mode`
-- Status: `ready`
+- Status: `complete`
 - Updated: 2026-09-25
-- Status authority: [Action Status](../STATUS.md)
-- Design source: [Dual-Side Mode 设计 §7–§10](../../SERVER-MODE.md)
+- Status authority: [Action Status](../../../STATUS.md)
+- Design source: [Dual-Side Mode 设计 §7–§10](../../../../SERVER-MODE.md)
 - Depends-on: `session-isolation`（必须先 complete——HTTP 多 session 复用其 Session 抽象 + per-user 隔离 + auth）
 
 ## Background
@@ -77,25 +77,39 @@
 
 | ID | Requirement | Observable condition | Planned evidence | Status |
 | --- | --- | --- | --- | --- |
-| A-001 | R-001 | LocalBridge 改造后 `node tests/parity-differential.mjs` 仍 27 PASS | 测试输出 | pending |
-| A-002 | R-001 | `npm test` 9 套仍全绿 | npm test exit 0 | pending |
-| A-003 | R-002 | `NORMIFY_TRANSPORT=http` 起 server，`tools/list` 返 31；`=stdio` 仍工作 | spawn + NDJSON/HTTP | pending |
-| A-004 | R-003 | 两并发 session companion 互不干扰；DSH vs HTTP parity 文件集一致 + .md normalize 逐字节一致 | 隔离测试 + parity HTTP 变体 | pending |
-| A-005 | R-004 | pi 瘦客户端连 HTTP server，31 工具 + call ok | headless 模拟日志 | pending |
-| A-006 | R-005 | pi 瘦客户端 companion：N 次外部写后 reminder；disabled void | headless 模拟 | pending |
-| A-007 | R-006 | SessionCacheBridge 算 == LocalBridge 直算 | 双 bridge 对比 | pending |
-| A-008 | R-008 | server 代码 grep 无主动 client fs 访问（跨 session 缓存外） | 代码审查 | pending |
-| A-009 | R-009 | SETUP.md 含 dual-side 节；§9 含 Q8/Q9 | grep | pending |
+| A-001 | R-001 | LocalBridge 改造后 `node tests/parity-differential.mjs` 仍 27 PASS | parity 27 PASS | ✅ passed |
+| A-002 | R-001 | `npm test` 9 套仍全绿 | npm test 12 套 exit 0 | ✅ passed |
+| A-003 | R-002 | `NORMIFY_TRANSPORT=http` 起 server，`tools/list` 返 31；`=stdio` 仍工作 | `tests/dual-side-http.mjs` A-003（3 PASS） | ✅ passed |
+| A-004 | R-003 | 两并发 session companion 互不干扰；DSH vs HTTP parity 文件集一致 + .md normalize 逐字节一致 | `tests/dual-side-http.mjs` A-004+parity | ✅ passed |
+| A-005 | R-004 | pi 瘦客户端连 HTTP server，31 工具 + call ok | `tests/dual-side-pi-client.mjs` A-005（3 PASS） | ✅ passed |
+| A-006 | R-005 | pi 瘦客户端 companion：N 次外部写后 reminder；disabled void | `tests/dual-side-pi-client.mjs` A-006（3 PASS） | ✅ passed |
+| A-007 | R-006 | SessionCacheBridge 算 == LocalBridge 直算 | `tests/dual-side-snapshot.mjs` A-007（3 PASS） | ✅ passed |
+| A-008 | R-008 | server 代码 grep 无主动 client fs 访问（跨 session 缓存外） | `tests/dual-side-snapshot.mjs` A-008（2 PASS）+ DP4 路由经 bridge | ✅ passed |
+| A-009 | R-009 | SETUP.md 含 dual-side 节；§9 含 Q8/Q9 | SETUP.md §4 + MULTIPLATFORM §9 Q8/Q9 | ✅ passed |
 
 ## Validation
 
-记录计划命令（与实际执行分离）：
+实际执行（全过）：
 
-- DP1：`node tests/parity-differential.mjs`（27 PASS）+ `npm test`（8 绿）+ `node ci-contract-check.cjs`。
-- DP2：`NORMIFY_TRANSPORT=http node lib/mcp/server.js` + HTTP client `tools/list`/`tools/call`；两并发 session 隔离；parity HTTP 变体。
-- DP3：headless 模拟（fake `ExtensionAPI` + HTTP server）。
-- DP4：双 bridge fingerprint 对比；端到端 pi client → server → SessionCacheBridge。
-- DP5：`grep dual-side docs/MULTIPLATFORM-SETUP.md`；`grep "Q8\|Q9" docs/MULTIPLATFORM.zh-CN.md`。
+- `npx tsc --noEmit`：0 error。
+- `npm test`：12 套全绿（原 9 + 新 3：`dual-side-http` 5 / `dual-side-pi-client` 6 / `dual-side-snapshot` 5）。
+- `node tests/parity-differential.mjs`：27 PASS（LocalBridge 改造不破坏 DSH vs MCP-stdio 等价）。
+- `node ci-contract-check.cjs`：绿。
+- DP2 `tests/dual-side-http.mjs`（5 PASS）：A-003 initialize/tools-list(31)/call；A-004 两并发 session companion 互不干扰；parity DSH-direct vs HTTP-MCP store 等价。
+- DP3 `tests/dual-side-pi-client.mjs`（6 PASS）：A-005 31 工具注册 + call（经 HTTP）；A-006 companion N 次写后 reminder + 重置 + 非 WRITE_TOOLS 不计。
+- DP4 `tests/dual-side-snapshot.mjs`（5 PASS）：A-007 pushSnapshot 200 + SessionCacheBridge fingerprint == LocalBridge 直算 + 缺文件 missing；A-008 server rootDir 无 client 源码 + fingerprint 经 cache 工作。
+
+实施记录：
+- `src/bridge.ts`（新）：`RepoBridge` 接口 + `LocalBridge`（包 fs+git）+ `SessionCacheBridge`（DP4，从推送快照读）。
+- `src/engine/store.ts`：`fingerprintOf`/`gitHead`/`gitChangedFiles` 加可选 `bridge?` 参（默认 LocalBridge，向后兼容；SessionCacheBridge 透传）。
+- `src/catalog.ts`：`ToolEnv.bridge?`；sync 工具 inline `existsSync`→`await bridge.exists`（sync→async 预计算）；fingerprint/sync 工具传 `env.bridge`。
+- `src/session.ts`：`SessionState.env`（可变 .bridge——pushSnapshot 后置 SessionCacheBridge，catalog 闭包调用时读）。
+- `src/mcp/server.ts`：`NORMIFY_TRANSPORT=stdio|http`（dual transport）；http stateful transport-per-session（每会话独立 transport+Server+SessionState）；`POST /snapshot` 路由（R3 推送→`SessionState.env.bridge=SessionCacheBridge`）；stdio 路径不变。
+- `src/pi/normify-client.ts`（新）：MCP `Client`+`StreamableHTTPClientTransport` → `pi.registerTool` 桥 + `jsonSchemaToTypebox`（server JSON Schema→typebox）+ 自带 companion handler。
+- `docs/MULTIPLATFORM-SETUP.md` §4 dual-side 节（起 server/客户端连法/R3 推送/companion split/验证）。
+- `docs/MULTIPLATFORM.zh-CN.md` §9 Q8（隔离模型 i）+ Q9（图共享=否）回流。
+
+执行期决策：R3 推送协议形状（DP4 review 定）→ 选 **HTTP `/snapshot` 端点**（非 MCP 自定义 method——SDK 自定义 method 不确定 + 不破坏 31 工具约束；R-007 SHOULD fallback）。
 
 ## Readiness gaps
 
@@ -106,7 +120,7 @@
 ## Closure conditions
 
 - 全部 MUST 验收（A-001~A-009）passed；R-007 SHOULD 满足或显式豁免。
-- parity（LocalBridge + HTTP 变体）全绿；9 套 npm test 不破坏；ci-contract 绿。
+- parity（LocalBridge + HTTP 变体）全绿；12 套 npm test 不破坏；ci-contract 绿。
 - 两并发 session 隔离验证通过（复用 session-isolation 抽象）。
 - 持久结论回流：SETUP.md dual-side 节 + §9 Q8/Q9。
 - 状态、路径、导航、归档一致。

@@ -1,4 +1,5 @@
 import type { Diagnostic, Module, ModuleFile, SourceRef } from './types.js';
+import type { RepoBridge } from '../bridge.js';
 export declare const PROJECT_PREFIX = "normify-";
 export declare class NormifyError extends Error {
     code: string;
@@ -42,18 +43,18 @@ export declare function promoteModule(projectDir: string, id: string): Promise<{
     file: string;
     warnings: Diagnostic[];
 }>;
-/** 仓库当前 HEAD（40 位 SHA）。 */
-export declare function gitHead(repoRoot: string): {
+/** 仓库当前 HEAD（40 位 SHA）。bridge 给定时经 bridge（SessionCacheBridge）；默认 LocalBridge(repoRoot)。 */
+export declare function gitHead(repoRoot: string, bridge?: RepoBridge): {
     sha: string | null;
     error: string | null;
 };
-/** git 变更文件清单（增量再生成的输入）。 */
-export declare function gitChangedFiles(repoRoot: string, diffSpec: string): {
+/** git 变更文件清单（增量再生成的输入）。bridge 给定时经 bridge；默认 LocalBridge(repoRoot)。 */
+export declare function gitChangedFiles(repoRoot: string, diffSpec: string, bridge?: RepoBridge): {
     files: string[] | null;
     error: string | null;
 };
-/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。 */
-export declare function fingerprintOf(repoRoot: string, sources: SourceRef[]): Promise<{
+/** source 文件集合的 SHA-256 指纹（全量哈希，v1 不做采样）。bridge 给定时经 bridge；默认 LocalBridge(repoRoot)。 */
+export declare function fingerprintOf(repoRoot: string, sources: SourceRef[], bridge?: RepoBridge): Promise<{
     hash: string | null;
     missing: string[];
 }>;

@@ -1,3 +1,4 @@
+import type { RepoBridge } from './bridge.js';
 export interface ToolEnv {
     rootDir: string;
     requireBilingual: boolean;
@@ -5,6 +6,8 @@ export interface ToolEnv {
     userScope?: string;
     /** session-isolation：auth 项目 allowlist。undefined=全可见（无 auth）。给定则 project slug 必须在列。 */
     projectAllowlist?: string[];
+    /** dual-side-mode DP1：仓库桥。undefined=LocalBridge(repoRoot)（DSH/stdio，向后兼容）；SessionCacheBridge（DP4）从 R3 推送快照读。 */
+    bridge?: RepoBridge;
 }
 /** JSON Schema 节点（作者态：属性级内联 required: true；编译后对象级为 required: string[]）。 */
 export interface SchemaNode {

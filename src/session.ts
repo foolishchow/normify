@@ -17,7 +17,8 @@ export interface SessionState {
     companionCount: number;
     companionConfig: CompanionConfig;
     catalog: ToolEntry[];                     // per-session buildCatalog(env with userScope)
-    cacheBridge?: unknown;                   // future: RepoBridge（dual-side-mode DP4）
+    /** DP4：会话 ToolEnv（可变 .bridge——pushSnapshot 后置 SessionCacheBridge，catalog 闭包调用时读 env.bridge）。 */
+    env: ToolEnv;
 }
 
 /** token 解析出的身份。 */
@@ -101,6 +102,7 @@ export function createSessionState(
         companionCount: 0,
         companionConfig: parseCompanionConfig(companionEnv),
         catalog,
+        env: sessionEnv,
     };
 }
 
