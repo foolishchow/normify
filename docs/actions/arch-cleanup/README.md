@@ -1,8 +1,8 @@
 # Arch Cleanup
 
 - Action: `arch-cleanup`
-- Status: `draft`
-- Updated: 2026-09-26
+- Status: `ready`
+- Updated: 2026-09-27
 - Status authority: [Action Status](../STATUS.md)
 - Design source: clean-architecture 依赖方向审计（基于代码 grep 实证，见 Design inputs）
 
@@ -19,7 +19,7 @@ dual-side-mode 完成后做了一次 clean architecture 审计。整体依赖方
 ## Goal
 
 - engine 层对 infrastructure 具体类零依赖（仅认 `RepoBridge` 接口）——修掉唯一真违规。
-- `pushSnapshot` 应用逻辑归 use-case 层（session.ts），adapter 只做协议解码 + 委托。
+- `pushSnapshot` 赋值逻辑归 use-case 层（session.ts，只接 RepoBridge）；adapter 负责解码 + 构造 SessionCacheBridge。
 - （可选）`ToolEnv` 按关注点拆分，提升可测试性 + 关注点分离。
 
 ## Non-goals
@@ -33,9 +33,9 @@ dual-side-mode 完成后做了一次 clean architecture 审计。整体依赖方
 ## Scope
 
 - AP-001：`src/engine/store.ts` 三函数（`gitHead`/`gitChangedFiles`/`fingerprintOf`）签名改 `bridge: RepoBridge` 必传（去 `?? new LocalBridge` 兜底 + 去 `import LocalBridge`）。
-- AP-002：catalog 的 resolve 闭包 + sync/fingerprint 工具 handler 承接"默认 LocalBridge 构造"（`env.bridge ?? new LocalBridge(repoRoot)`），从 engine 上移到 use-case。
-- AP-003：`pushSnapshot(state, data)` 抽到 `src/session.ts`（构造 `SessionCacheBridge` + 赋 `state.env.bridge`）；`mcp/server.ts` 的 `/snapshot` handler 改调它。
-- AP-004（可选）：`ToolEnv` 拆 `SecurityContext`（userScope/projectAllowlist）+ `InfraEnv`（rootDir/bridge）+ `Policy`（requireBilingual）；`buildCatalog` 接拆分后的 params；4 adapter + 测试同步。
+- AP-002：6 个 evidence 工具 handler（sync/fingerprint/validate/build/module_refresh/change_close）承接"默认 LocalBridge 构造"（`env.bridge ?? new LocalBridge(args.repoRoot)`），从 engine 上移到 use-case；resolve 闭包不动（rootDir 项目解析）。
+- AP-003：`pushSnapshot(state, bridge: RepoBridge)` 抽到 `src/session.ts`（只赋值 `state.env.bridge = bridge`，认 RepoBridge 接口）；`mcp/server.ts` 的 `/snapshot` handler 解码 body + 构造 SessionCacheBridge + 调 pushSnapshot。
+- AP-004（已 defer）：`ToolEnv` 拆分移出本 Action（R-005 defer，非目标）。
 
 ## Design inputs
 
@@ -54,24 +54,27 @@ dual-side-mode 完成后做了一次 clean architecture 审计。整体依赖方
 ## Requirements
 
 - **R-001 MUST**：`src/engine/store.ts` 零 `import LocalBridge`（具体）；`gitHead`/`gitChangedFiles`/`fingerprintOf` 签名 `bridge: RepoBridge` 必传（无默认兜底）。engine 层对 infrastructure 具体类的依赖 = 0（仅认 `RepoBridge` 接口）。
-- **R-002 MUST**：默认 LocalBridge 构造上移到 use-case 层——catalog resolve 闭包 + 工具 handler 内 `env.bridge ?? new LocalBridge(repoRoot)`；DSH/stdio（env.bridge undefined）行为零变（parity 27 PASS 不破坏）。
-- **R-003 MUST**：`pushSnapshot(state, data)` 在 `src/session.ts`（use-case）；`mcp/server.ts` 的 `/snapshot` handler 改为协议解码 + 委托 `pushSnapshot`；SessionCacheBridge 构造不在 adapter 层。
-- **R-004 MUST**：向后兼容——parity 27 PASS + 12 套 npm test + ci-contract 全绿（同 session-isolation/dual-side-mode 硬约束）。
-- **R-005 MAY**：`ToolEnv` 拆 `SecurityContext{userScope, projectAllowlist}` + `InfraEnv{rootDir, bridge}` + `Policy{requireBilingual}`；`buildCatalog(security, infra, policy)` 或等价；session-isolation 测试可独立注入 security（不强制 userScope 即可测 allowlist）。若 ROI 不足或破坏面过大，可 defer 到独立 Action。
-- **R-006 SHOULD**：审计标注的"已知妥协"（engine 直接 node:fs 读写 rootDir 图数据 / catalog 单文件 / edit+template 巨石）在本 Action README 或设计文档显式记录为"已知妥协，非本 Action 范围"，防未来误判为"应保持的设计"。
+- **R-002 MUST**：默认 LocalBridge 构造上移到 use-case 层 + engine 内部透传：(i) 6 个 evidence 工具 handler（sync/fingerprint/validate/build/module_refresh/change_close）内 `env.bridge ?? new LocalBridge(args.repoRoot)`（resolve 闭包不动——它是 rootDir 项目解析，不碰 repoRoot）；(ii) `validateProject`/`buildProject`/`refreshModules`/`closeChange` opts 加 `bridge?: RepoBridge`，catalog 工具调用时传入（透传到内部 `fingerprintOf`/`gitHead`）；(iii) **`closeChange` 保留 `gitHead` 调用（经 bridge）**——它戳 `revision.after`（change_close 的真特性，不可移除）。DSH/stdio（env.bridge undefined）行为零变（parity 27 PASS 不破坏）。
+- **R-003 MUST**：`pushSnapshot(state, bridge: RepoBridge)` 在 `src/session.ts`（use-case，只做 `state.env.bridge = bridge` 赋值）；`mcp/server.ts` 的 `/snapshot` handler 解码 body + 构造 `new SessionCacheBridge(data)`（adapter 层，adapter→infrastructure 允许）+ 调 `pushSnapshot(state, bridge)`。session.ts 只认 `RepoBridge` 接口（不 import SessionCacheBridge 具体类）。
+- **R-004 MUST**：向后兼容——parity 27 PASS + 12 套 npm test + ci-contract + tsc 0 全绿（同 session-isolation/dual-side-mode 硬约束）。
+- **R-005（已 defer）**：`ToolEnv` 拆 SecurityContext+InfraEnv+Policy **移出本 Action**（ROI 偏低：buildCatalog 单源签名改带 parity 回归风险，收益仅测试性微增；现状测试不卡）。列为非目标，未来独立 Action 再议。
+- **R-006 SHOULD**：审计标注的"已知妥协"（engine 直接 node:fs 读写 rootDir 图数据 / catalog 单文件 / edit+template 巨石）在本 README 显式记录为"已知妥协，非本 Action 范围"，防未来误判为"应保持的设计"。
 
 ## Proposed design
 
-- **AP-001/002（LocalBridge 上移）**：store.ts 三函数签名 `(..., bridge: RepoBridge)` 必传，去 `?? new LocalBridge(repoRoot)`。catalog resolve 闭包内：`const repoBridge = env.bridge ?? new LocalBridge(String(args.repoRoot)); fingerprintOf(repoRoot, sources, repoBridge)`（sync/fingerprint 工具同）。validate.ts/edit.ts/companion.ts 调用点：这几处不经 catalog resolve 闭包——它们调 `fingerprintOf(repoRoot, m.source)` 无 bridge。**决策点**：要么 (a) validate/edit/companion 也经 bridge 注入（需透传 RepoBridge 到 validateProject/buildProject/companion opts，面较大），要么 (b) 这几处保留 `new LocalBridge(repoRoot)` 构造但**在调用点**（不在 engine 内）——即 engine 函数必传 bridge，调用方负责构造。倾向 (b)：engine 纯接口依赖；调用方（catalog 工具 / validate / edit / companion）各自 `?? new LocalBridge`。Readiness review 定。
-- **AP-003（pushSnapshot）**：`src/session.ts` 加 `export function pushSnapshot(state: SessionState, data: { files, gitHead?, gitChangedFiles? }): void`，内部 `state.env.bridge = new SessionCacheBridge(data)`。server.ts `/snapshot` handler：`const st = sessionManager.get(body.sessionId); if (!st) 404; pushSnapshot(st, body);`。
-- **AP-004（ToolEnv 拆，MAY）**：`SecurityContext` + `InfraEnv` + `Policy` 三接口；`buildCatalog(infra, policy, security?)`。影响面：4 adapter 调用点 + session.ts createSessionState + 测试。Readiness review 评 ROI。
+**F-001 决策（user 授权 (a) 全透传，2026-09-26；R2 纠正 R1 误判）**：store.ts 必传 bridge（全纯）+ validate/edit/**closeChange** 全透传 RepoBridge；closeChange 保留 gitHead（经 bridge）戳 revision.after（无特性丢失）。R1 曾误判 companion.ts:103 gitHead 为 reminder handler 可选戳、提 a-3 移除——R2 实测推翻（该调用在 closeChange，是真特性）→ 重新授权 (a) 全透传。
+
+- **AP-001/002（LocalBridge 上移 + engine 内透传）**：store.ts 三函数签名 `(..., bridge: RepoBridge)` 必传，去 `?? new LocalBridge` + 去 `import LocalBridge`。6 个 evidence 工具 handler（sync/fingerprint 已传；validate/build/module_refresh/change_close 待加）内 `const repoBridge = args.repoRoot ? (env.bridge ?? new LocalBridge(String(args.repoRoot))) : undefined` + 传给 engine 函数。`validateProject`/`buildProject`/`refreshModules`/`closeChange` opts 加 `bridge?: RepoBridge`，engine 内部透传到 `fingerprintOf`/`gitHead`。**`closeChange` 保留 `gitHead(bridge)` 调用**（戳 revision.after，特性不丢）。reminder handler（`createCompanionHandler`，在 adapter 层）本就不调 gitHead，不动。
+- **AP-003（pushSnapshot，F-002 修正）**：`src/session.ts` 加 `export function pushSnapshot(state: SessionState, bridge: RepoBridge): void { state.env.bridge = bridge; }`（use-case，只赋值，认 RepoBridge 接口）。`mcp/server.ts` `/snapshot` handler：解码 body → `new SessionCacheBridge(body)`（adapter 构造，允许 adapter→infrastructure）→ `pushSnapshot(state, bridge)`。session.ts 不 import SessionCacheBridge。
+- **AP-004（ToolEnv 拆，F-003 defer）**：**移出本 Action**（R-005 defer，非目标）。未来独立 Action 评估 ROI。
+- **AP-005（已知妥协记录，R-006）**：本 README Non-goals 节已显式记录（engine node:fs / catalog 单文件 / edit+template 巨石）= 已知妥协。
 
 ## Implementation plan
 
-- **AP-001**：store.ts 三函数签名改 `bridge: RepoBridge` 必传 + 去 import LocalBridge。
-- **AP-002**：catalog resolve 闭包 + sync/fingerprint 工具承接默认 LocalBridge 构造；validate.ts/edit.ts/companion.ts 调用点按决策 (b) 各自构造（或透传）。验证 parity 27 PASS + 12 套绿。
-- **AP-003**：`src/session.ts` 加 `pushSnapshot`；server.ts `/snapshot` handler 改委托。验证 dual-side-snapshot 5 PASS。
-- **AP-004（若 MAY 转 SHOULD）**：拆 ToolEnv + 4 adapter + 测试同步。Readiness review 定是否进本 Action。
+- **AP-001**：store.ts 三函数签名改 `bridge: RepoBridge` 必传 + 去 `import LocalBridge` + 去 `?? new LocalBridge` 兜底。
+- **AP-002**：(i) 6 个 evidence 工具 handler（sync/fingerprint 已传；validate/build/module_refresh/change_close 待加）承接 `args.repoRoot ? (env.bridge ?? new LocalBridge(args.repoRoot)) : undefined`；(ii) `validateProject`/`buildProject`/`refreshModules`/`closeChange` opts 加 `bridge?: RepoBridge`，catalog 工具透传；closeChange 内 `gitHead(repoRoot)` → `gitHead(repoRoot, bridge)`（经 bridge，保留 revision.after 戳）。验证 parity 27 PASS + 12 套绿 + companion-snapshot 3 PASS + change_close 回归。
+- **AP-003**：`src/session.ts` 加 `pushSnapshot(state, bridge: RepoBridge)`；server.ts `/snapshot` handler 改为构造 SessionCacheBridge + 调 pushSnapshot。验证 dual-side-snapshot 5 PASS。
+- **AP-005**：本 README Non-goals 已记已知妥协（R-006 满足）。
 - 全程：`npm test` 12 套绿 + parity 27 + ci-contract + tsc 0。
 
 ## Acceptance
@@ -79,11 +82,10 @@ dual-side-mode 完成后做了一次 clean architecture 审计。整体依赖方
 | ID | Requirement | Observable condition | Planned evidence | Status |
 | --- | --- | --- | --- | --- |
 | A-001 | R-001 | `grep -n "LocalBridge" src/engine/*.ts` 全空（engine 零具体依赖）；store 三函数签名 `bridge: RepoBridge` 必传 | grep + tsc | pending |
-| A-002 | R-002 | catalog resolve 闭包 + sync/fingerprint 工具内 `env.bridge ?? new LocalBridge`；DSH/stdio 行为零变 | parity 27 PASS + mcp-smoke 36 + companion-snapshot 3 | pending |
-| A-003 | R-003 | `pushSnapshot` 在 `src/session.ts`；server.ts `/snapshot` handler 仅解码 + 委托（无 SessionCacheBridge 构造） | grep "SessionCacheBridge" src/mcp/server.ts 空 + dual-side-snapshot 5 PASS | pending |
+| A-002 | R-002 | 6 个 evidence 工具 handler（sync/fingerprint/validate/build/module_refresh/change_close）内 `args.repoRoot ? (env.bridge ?? new LocalBridge) : undefined`；validateProject/buildProject/refreshModules/closeChange opts 加 `bridge?` 透传；closeChange 保留 `gitHead(bridge)` 戳 revision.after | grep "bridge" src/engine/companion.ts 有 + closeChange 调 `gitHead(repoRoot, bridge)` + parity 27 + mcp-smoke 36 + companion-snapshot 3 | pending |
+| A-003 | R-003 | `pushSnapshot(state, bridge: RepoBridge)` 在 session.ts（只赋值）；server.ts `/snapshot` 构造 SessionCacheBridge + 调 pushSnapshot | grep "SessionCacheBridge" src/session.ts 空 + dual-side-snapshot 5 PASS | pending |
 | A-004 | R-004 | parity 27 + npm test 12 套 + ci-contract + tsc 0 全绿 | 测试输出 | pending |
-| A-005 | R-005 | ToolEnv 拆分（若进本 Action）：buildCatalog 接拆分后 params；session-isolation 测试可独立注入 security | session-isolation 13 PASS（改后） | pending |
-| A-006 | R-006 | "已知妥协"清单在设计文档或本 README 显式记录 | grep "已知妥协" | pending |
+| A-005 | R-006 | "已知妥协"清单在本 README 显式记录（Non-goals 节） | grep "已知妥协" | pending |
 
 ## Validation
 
@@ -96,9 +98,15 @@ dual-side-mode 完成后做了一次 clean architecture 审计。整体依赖方
 
 ## Readiness gaps
 
-- **AP-002 决策点**：validate.ts/edit.ts/companion.ts 的 `fingerprintOf`/`gitHead` 调用（不经 catalog resolve 闭包）如何承接 bridge——(a) 透传 RepoBridge 到 validateProject/buildProject/companion opts（面较大但最纯），还是 (b) 这几处调用点各自 `new LocalBridge`（engine 仍纯，调用方负责）。倾向 (b)。Readiness review 定。
-- **AP-004 是否进本 Action**：ToolEnv 拆分影响面（4 adapter + session + 测试），ROI vs 成本——Readiness review 评，可 defer 独立 Action。
-- 设计文档未经 review；Readiness review 需核验：签名变更影响面、向后兼容、pushSnapshot 抽象边界、ToolEnv 拆分决策。
+无（R5 通过，K=3 连续 clean 达成）。Readiness review 记录（R1–R5）：
+
+- **R1**：F-001（medium+ambiguous）— R-001（engine=0 LocalBridge）与 option (b)（部分修 store-only）自相矛盾（(b) 让 validate/edit/companion 仍 import LocalBridge）→ stop+escalate → user 初授权 (c)+a-3。
+- **R2**：F-004（critical）— R1 事实错误：`companion.ts:103 gitHead` 误判为 reminder handler 可选戳 → 实测在 `closeChange` 戳 `revision.after`（change_close 真特性，a-3 会静默丢特性）→ re-escalate → user 重新授权 **(a) 全透传**：validate/edit/**closeChange** 全透传 RepoBridge，closeChange 保留 `gitHead(bridge)`。F-004 是关键拦截（避免特性丢失）。同时 auto-fix F-002（AP-003 `pushSnapshot(state, bridge)` 只赋值，SessionCacheBridge 构造留 adapter）+ F-003（AP-004 ToolEnv 拆 defer 独立 Action，R-005 非目标）。
+- **R3**：0 medium+（call-site 清单 grep 实证完整：validate.ts:312 + edit.ts:660,690(refreshModules) + companion.ts:103(closeChange) + catalog.ts:886/904/1220(已传) + tests companion-e2e:34(待更新) + dual-side-snapshot:80(已传)，无遗漏；edit.ts:660 在 opts 函数可透传；closeChange 保留 gitHead 经 bridge 戳 revision.after 无特性损失；reminder handler 在 adapter 层不动）→ clean round 1/3。
+- **R4**：F-005（low，unambiguous）— R-002(i) 措辞 "catalog resolve 闭包"错（resolve 闭包是 rootDir 项目解析，不碰 repoRoot）；且仅列 sync/fingerprint 2 个，漏 validate/build/module_refresh/change_close 4 个 evidence 工具 handler（bridge 构造真落点）→ auto-fix：R-002(i) 重写为 6 evidence handler + resolve 闭包不动。low 不重置计数器 → clean round 2/3。
+- **R5**：0 medium+（patchModule 不调 fingerprintOf/gitHead，R-002(ii) 列 refreshModules 正确；store.ts L13 `import type RepoBridge` 是 port 抽象，依赖反转正确，删 L12 LocalBridge 后零具体 infrastructure；node:fs 为 rootDir 图数据，R-006 已记录妥协；session.ts 不 import SessionCacheBridge，pushSnapshot 只赋值，A-003 一致）→ clean round 3/3 ✅。
+
+**K=3 达成（R3/R4/R5 连续 0 medium+）→ readiness review PASS。** user 2026-09-27 授权 status → `ready`。
 
 ## Closure conditions
 

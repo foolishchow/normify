@@ -30,7 +30,7 @@
 | --- | --- | --- | --- | --- |
 | `session-isolation` | `complete` | [README](_archive/complete/session-isolation/README.md) | dual-side 前置地基：统一 Session 抽象（SessionManager/SessionState，stdio 1/http N 同形状）+ per-user 图隔离（模型 i，路径 `rootDir/[<userId>/]normify-<slug>/`）+ companion 模块作用域 bug 修复→per-session + auth 脚手架（token→userId+allowlist）+ 路径 arg 逃逸防护（`session/path-escape`）。仅 stdio 验证。向后兼容硬约束：无 token 路径不变，27 PASS+9 套绿（含 session-isolation 13）。阻塞解除：`dual-side-mode` 可复用本抽象。设计见 [SERVER-MODE.md §3–§6](../SERVER-MODE.md)。 | 2026-09-25 |
 | `dual-side-mode` | `complete` | [README](_archive/complete/dual-side-mode/README.md) | normify server-side 长驻服务（MCP HTTP + Bridge 抽象 repoRoot），多 agent 共享单一 catalog/engine。depends-on `session-isolation`（已 complete）。DP1–DP5：Bridge→HTTP transport（多 session 复用前置抽象）→pi 瘦客户端→SessionCacheBridge R3 推送→部署文档。设计见 [SERVER-MODE.md §7–§10](../SERVER-MODE.md)。 | 2026-09-25 |
-| `arch-cleanup` | `draft` | [README](arch-cleanup/README.md) | clean-architecture 依赖方向修正：engine 对 LocalBridge 具体类零依赖（store 三函数 bridge:RepoBridge 必传，默认构造上移 use-case）+ pushSnapshot 抽到 session.ts（adapter 只解码委托）+ 可选 ToolEnv 拆分。非目标：catalog/edit/template 文件拆分（规模问题，parity 风险）。向后兼容硬约束：parity 27+12 套绿。 | 2026-09-26 |
+| `arch-cleanup` | `ready` | [README](arch-cleanup/README.md) | clean-architecture 依赖方向修正：engine 对 LocalBridge 具体类零依赖（store 三函数 `bridge:RepoBridge` 必传 + validate/build/refreshModules/closeChange opts 透传 bridge，closeChange 保留 gitHead 经 bridge 戳 revision.after）+ pushSnapshot(state,bridge) 抽 session.ts（只赋值，SessionCacheBridge 构造留 adapter）+ ToolEnv 拆 defer 独立 Action。非目标：catalog/edit/template 文件拆分。向后兼容硬约束：parity 27+12 套绿。readiness R1–R5 PASS（K=3，R2 纠正 R1 误判 a-3 会丢 closeChange 特性）。 | 2026-09-27 |
 
 ## Archive
 
