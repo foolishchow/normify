@@ -1,0 +1,859 @@
+{
+  "$schema": "https://raw.githubusercontent.com/foolishchow/normify/main/architecture.schema.json",
+  "meta": {
+    "name": "normify 多平台架构",
+    "version": "0.6.0",
+    "updated": "2026-09-27",
+    "branch": "feature/dual-side-mode",
+    "toolCount": 31,
+    "layers": [
+      "host",
+      "adapter",
+      "usecase",
+      "port",
+      "engine",
+      "infra",
+      "data"
+    ]
+  },
+  "nodes": [
+    {
+      "id": "host-dsh",
+      "label": "DeepSeek Harness",
+      "layer": "host",
+      "kind": "host",
+      "file": null,
+      "description": "DSH 宿主（cordis 容器）。加载 normify 插件（lib/index.js apply(ctx, config)）。",
+      "details": [
+        "入口 lib/index.js（apply(ctx, config: Config)）",
+        "Config: rootDir/requireBilingual/devCompanionReminder（schemastery）",
+        "registerSkill 自动注册 skills/normify-gen/SKILL.md"
+      ]
+    },
+    {
+      "id": "host-mcp",
+      "label": "MCP 宿主",
+      "layer": "host",
+      "kind": "host",
+      "file": null,
+      "description": "Claude Code / Codex / Cursor。经 MCP config 启动或连接 normify server。",
+      "details": [
+        "stdio：.mcp.json / config.toml 指向 command",
+        "http：MCP config 指向 http://host:port/mcp",
+        "内置 MCP client（零代码连接）"
+      ]
+    },
+    {
+      "id": "host-pi",
+      "label": "pi 宿主",
+      "layer": "host",
+      "kind": "host",
+      "file": null,
+      "description": "@earendil-works/pi-coding-agent。加载 normify 扩展（本地扩展或瘦客户端）。",
+      "details": [
+        "本地：src/pi/normify.ts（自动发现 .ts glob）",
+        "瘦客户端：src/pi/normify-client.ts（连 HTTP server）",
+        "settings 配置 env / --approve trust"
+      ]
+    },
+    {
+      "id": "ad-dsh",
+      "label": "DSH 适配器",
+      "layer": "adapter",
+      "kind": "adapter",
+      "file": "src/tools.ts, src/index.ts",
+      "description": "DSH 插件入口。registerTools(ctx, infra, policy) 遍历 catalog 注册 31 工具到 DSH ToolService。",
+      "details": [
+        "apply(ctx, config) → registerTools(ctx, {rootDir}, {requireBilingual})",
+        "toolenv-split 后签名 (infra, policy)，无 security（{} 内联）",
+        "execute 直接用 entry.execute（platform-agnostic）"
+      ]
+    },
+    {
+      "id": "ad-mcp-stdio",
+      "label": "MCP stdio 适配器",
+      "layer": "adapter",
+      "kind": "adapter",
+      "file": "src/mcp/server.ts",
+      "description": "MCP stdio server（NORMIFY_TRANSPORT=stdio 默认）。单用户本地，向后兼容。",
+      "details": [
+        "stdio JSON-RPC 2.0（SDK 握手协商协议版本）",
+        "STDIO_SESSION_ID 单 session",
+        "tools/list + tools/call 复用 catalog"
+      ]
+    },
+    {
+      "id": "ad-mcp-http",
+      "label": "MCP HTTP 适配器",
+      "layer": "adapter",
+      "kind": "adapter",
+      "file": "src/mcp/server.ts",
+      "description": "MCP HTTP server（NORMIFY_TRANSPORT=http）。长驻，多 agent 多 session。",
+      "details": [
+        "每会话独立 transport+Server（SDK stateful：同 transport 二次 initialize 拒 400）",
+        "POST /snapshot 路由（R3 快照）",
+        "SessionManager per-session catalog/companionCount",
+        "auth: NORMIFY_AUTH_TOKENS → token→userId+allowlist"
+      ]
+    },
+    {
+      "id": "ad-pi",
+      "label": "pi 扩展适配器",
+      "layer": "adapter",
+      "kind": "adapter",
+      "file": "src/pi/normify.ts",
+      "description": "pi 本地扩展。registerPiTools(pi, infra, policy) 经 pi.registerTool 注册 31 工具。",
+      "details": [
+        "JSON Schema → typebox 投影（StringEnum + formatResultText）",
+        "companion 钩子：pi.on('tool_result') createCompanionHandler（WRITE_TOOLS）",
+        "异步 factory 加载（pi 支持 async factory）"
+      ]
+    },
+    {
+      "id": "ad-pi-client",
+      "label": "pi companion 扩展",
+      "layer": "adapter",
+      "kind": "adapter",
+      "file": "src/pi/normify-client.ts",
+      "description": "pi companion-only 扩展（pi 0.99.2+ 原生 MCP 后）。仅计 pi 外部写/edit；工具连经由 pi 原生 MCP（mcp.json）。",
+      "details": [
+        "pi 0.99.2+ 原生 MCP（stdio + streamable HTTP，mcp.json 配置）",
+        "本扩展仅 createCompanionHandler（WRITE_TOOLS 计外部写）",
+        "pi tool pipeline 对 MCP 工具触发 tool_result（docs/mcp.md Permissions）",
+        "server 侧 companionCount 计 normify_* 写；split 完整",
+        "不拉 catalog/engine（保持 thin）"
+      ]
+    },
+    {
+      "id": "uc-catalog",
+      "label": "Catalog（31 工具）",
+      "layer": "usecase",
+      "kind": "usecase",
+      "file": "src/catalog.ts",
+      "description": "平台无关的 31 个 normify_* 工具。buildCatalog(security, infra, policy) 单源，4 adapter 共用。",
+      "details": [
+        "buildCatalog(security, infra, policy) → ToolEntry[]×31",
+        "resolve 闭包：userScope/projectAllowlist 校验 + resolveProject 路径作用域",
+        "evidence 工具 handler：infra.bridge ?? new LocalBridge(repoRoot)",
+        "1806 行单文件（parity 前提，已记录妥协）"
+      ]
+    },
+    {
+      "id": "uc-session",
+      "label": "Session 抽象",
+      "layer": "usecase",
+      "kind": "usecase",
+      "file": "src/session.ts",
+      "description": "统一 Session 抽象。SessionManager + SessionState（stdio 1 / http N 同形状）。",
+      "details": [
+        "SessionState{userId, projectAllowlist, infra, policy, companionCount, catalog}",
+        "createSessionState：identity←token(顶层)、infra←env、policy←env",
+        "pushSnapshot(state, bridge) → state.infra.bridge（只赋值）",
+        "parseAuthConfig/resolveSessionAuth（NORMIFY_AUTH_TOKENS）"
+      ]
+    },
+    {
+      "id": "uc-companion",
+      "label": "Companion 提醒",
+      "layer": "usecase",
+      "kind": "usecase",
+      "file": "src/companion.ts",
+      "description": "共享 companion 提醒模块。companionReminder/parseCompanionConfig/WRITE_TOOLS。",
+      "details": [
+        "WRITE_TOOLS 正则：write/edit/str_replace_editor/apply_patch 等",
+        "默认关（NORMIFY_DEV_COMPANION_REMINDER=1 开），threshold 默认 8",
+        "文本 R-004 字节一致（跨 host 同提醒）"
+      ]
+    },
+    {
+      "id": "pt-bridge",
+      "label": "RepoBridge 接口",
+      "layer": "port",
+      "kind": "port",
+      "file": "src/bridge.ts",
+      "description": "仓库桥端口。证据工具经此访问 repoRoot（readFile/exists/gitHead/gitChangedFiles）。",
+      "details": [
+        "clean 接口：readFile/exists/gitHead/gitChangedFiles",
+        "path 为相对 repoRoot 的相对路径",
+        "LocalBridge / SessionCacheBridge 两实现（adapter 侧）",
+        "engine/catalog 只认接口（依赖反转）"
+      ]
+    },
+    {
+      "id": "pt-facets",
+      "label": "Facet 契约",
+      "layer": "port",
+      "kind": "port",
+      "file": "src/catalog.ts",
+      "description": "SecurityContext/InfraEnv/Policy 3 facet。buildCatalog 入参契约（toolenv-split）。",
+      "details": [
+        "SecurityContext{userScope?, projectAllowlist?} ← auth",
+        "InfraEnv{rootDir, bridge?} ← config/R3 推送",
+        "Policy{requireBilingual} ← config",
+        "auth→identity / config→infra / config→policy 流向显式"
+      ]
+    },
+    {
+      "id": "en-store",
+      "label": "Store（图 DB + 证据原语）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/store.ts",
+      "description": "rootDir 图数据库读写 + 证据原语（fingerprintOf/gitHead/gitChangedFiles）+ resolveProject/listProjects/loadAllModules。",
+      "details": [
+        "resolveProject(rootDir, {project,dir}, {create}, userScope)：per-user 路径 + assertWithinScope 逃逸防护",
+        "fingerprintOf(bridge, sources)：SHA-256 全量哈希",
+        "gitHead(bridge)/gitChangedFiles(bridge, diff)：经 bridge",
+        "engine 零 LocalBridge 依赖（arch-cleanup）；node:fs 只读写 rootDir 图数据（已知妥协）"
+      ]
+    },
+    {
+      "id": "en-validate",
+      "label": "Validate（架构校验）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/validate.ts",
+      "description": "validateProject：L1-L3 规则 + 证据校验（source 存在性 + fingerprint 一致性）。",
+      "details": [
+        "L1 结构/命名/双语 / L2 API 依赖 / L3 架构规则（policy）",
+        "repoRoot 给定时经 bridge.exists + fingerprintOf 校验",
+        "bridge 透传（arch-cleanup）；0 error 硬约束（change_close 依赖）"
+      ]
+    },
+    {
+      "id": "en-edit",
+      "label": "Edit（编辑算子）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/edit.ts",
+      "description": "batchWrite/patchModule/moveModuleTree/refreshModules。模块图编辑 + fingerprint 重算。",
+      "details": [
+        "refreshModules：gitHead(bridge) + fingerprintOf(bridge)（revision 戳）",
+        "moveModuleTree：id 级联 rewiring + 渲染数据随迁",
+        "821 行单文件（巨石，已记录妥协）"
+      ]
+    },
+    {
+      "id": "en-compile",
+      "label": "Compile（产物生成）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/compile.ts",
+      "description": "buildProject：校验后生成 tree.json/receipt 等产物（经 validateProject 前置）。",
+      "details": [
+        "BuildOptions extends ValidateOptions（opts 透传 bridge）",
+        "0 error 才产出；change_count/open_change_count 反映在 tree.json/receipt"
+      ]
+    },
+    {
+      "id": "en-render",
+      "label": "Render（HTML 渲染）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/render.ts",
+      "description": "renderProject：从渲染数据生成 HTML 产物（只读 projectDir 图数据）。",
+      "details": [
+        "readFile → template.ts 渲染",
+        "不碰 repoRoot fs（compile.ts 无 repoRoot）"
+      ]
+    },
+    {
+      "id": "en-close",
+      "label": "Change Close",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/companion.ts",
+      "description": "closeChange：变更关闭（强制 0 error + revision.after 戳 git HEAD）。",
+      "details": [
+        "refresh → validate(0 error 强制) → build → render → 写 change 文件",
+        "revision.after = gitHead(bridge).sha（closeChange 真特性，不可移除）",
+        "文件重名 companion.ts 但非 reminder（reminder 在 src/companion.ts）"
+      ]
+    },
+    {
+      "id": "en-changes",
+      "label": "Changes（变更记录）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/changes.ts",
+      "description": "change 记录生命周期：open/list/update/close 的加载/校验/写入。",
+      "details": [
+        "l1ValidateChange / loadChangeFile / writeChangeFile / listChangeIds",
+        "变更留痕（changes/<id>.json，随结构目录回档）"
+      ]
+    },
+    {
+      "id": "en-layout",
+      "label": "Layout（渲染数据）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/layout.ts",
+      "description": "渲染数据层（layouts 派生）：edgeKey/l1ValidateLayout/读写渲染 JSON。",
+      "details": [
+        "LAYOUT_SCHEMA_VERSION 版本化",
+        "move/refresh 时渲染数据随迁"
+      ]
+    },
+    {
+      "id": "en-policy",
+      "label": "Policy（架构规则）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/policy.ts",
+      "description": "架构规则（policy.yml）：L3 校验（如 no-core-to-consumer）。",
+      "details": [
+        "loadPolicyFile/evaluatePolicy",
+        "project_init 自动安装默认规则（2 条）"
+      ]
+    },
+    {
+      "id": "en-frontmatter",
+      "label": "Frontmatter（MD 解析）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/frontmatter.ts",
+      "description": "模块 MD 解析/序列化（YAML frontmatter + 正文）。",
+      "details": [
+        "parseModuleText/serializeModule",
+        "l1Validate（模块级规则）"
+      ]
+    },
+    {
+      "id": "en-template",
+      "label": "Template（渲染模板）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/template.ts",
+      "description": "HTML 渲染模板（1767 行巨石，render.ts 消费）。",
+      "details": [
+        "renderProject 读模板 → HTML 产物",
+        "巨石文件，已记录妥协（对外 API 不变）"
+      ]
+    },
+    {
+      "id": "en-base",
+      "label": "基础模块（ids/diag/types）",
+      "layer": "engine",
+      "kind": "engine",
+      "file": "src/engine/{ids,diag,types}.ts",
+      "description": "id 派生（deriveParent/moduleFilePath）、诊断（diag/fmtDiag）、共享类型。",
+      "details": [
+        "叶子模块，无 engine 反向依赖",
+        "全部 engine 模块的公共底座"
+      ]
+    },
+    {
+      "id": "inf-local",
+      "label": "LocalBridge",
+      "layer": "infra",
+      "kind": "infra",
+      "file": "src/bridge.ts",
+      "description": "本地 fs+git 桥（DSH/stdio 单用户：client fs = server fs）。",
+      "details": [
+        "new LocalBridge(repoRoot)：内部 join(repoRoot, path)",
+        "readFile/exists/gitHead(spawnSync git)/gitChangedFiles"
+      ]
+    },
+    {
+      "id": "inf-cache",
+      "label": "SessionCacheBridge",
+      "layer": "infra",
+      "kind": "infra",
+      "file": "src/bridge.ts",
+      "description": "R3 推送快照桥（server 不访 client fs）。",
+      "details": [
+        "从 POST /snapshot 推送字节读（files base64 + gitHead/gitChangedFiles）",
+        "fingerprint 经 cache 算 == LocalBridge 直算（parity A-007）",
+        "server rootDir 无 client 源码仍工作（A-008）"
+      ]
+    },
+    {
+      "id": "inf-fs",
+      "label": "node:fs + git",
+      "layer": "infra",
+      "kind": "infra",
+      "file": "node:fs/promises, node:child_process",
+      "description": "rootDir 图数据 IO + git 原语（engine 直接使用）。",
+      "details": [
+        "engine 直读 rootDir 图数据（已知妥协，非 bridge 范围）",
+        "spawnSync git（经 LocalBridge 封装）"
+      ]
+    },
+    {
+      "id": "data-root",
+      "label": "rootDir 图数据库",
+      "layer": "data",
+      "kind": "data",
+      "file": "<rootDir>/normify-<slug>/",
+      "description": "normify 结构数据项目根（modules/ + layouts/ + changes/ + renders/ + policy.yml）。",
+      "details": [
+        "per-user 隔离：rootDir/[<userId>/]normify-<slug>/（模型 i 完全独立）",
+        "无 token=default user 路径不变（向后兼容）",
+        "≠ repoRoot（用户源码）"
+      ]
+    },
+    {
+      "id": "data-repo",
+      "label": "repoRoot 用户源码",
+      "layer": "data",
+      "kind": "data",
+      "file": "<repoRoot>/",
+      "description": "用户源代码仓库（证据校验对象，经 bridge 只读）。",
+      "details": [
+        "fingerprint 一致性 / source 存在性 / git HEAD 证据",
+        "单边模式：LocalBridge 直读；dual-side：SessionCacheBridge 快照读",
+        "engine 不经 bridge 不碰 repoRoot（arch-cleanup 保证）"
+      ]
+    },
+    {
+      "id": "data-mcp",
+      "label": "MCP 协议",
+      "layer": "data",
+      "kind": "protocol",
+      "file": "@modelcontextprotocol/sdk",
+      "description": "MCP JSON-RPC 2.0 / StreamableHTTP（initialize/tools/list/tools/call + Accept: SSE 头）。",
+      "details": [
+        "SDK v1.30.1（stateful transport-per-session）",
+        "stdio 单 session；http 每会话独立 transport",
+        "claude/codex/cursor 内置 client；pi 需瘦客户端"
+      ]
+    },
+    {
+      "id": "data-snapshot",
+      "label": "R3 快照（POST /snapshot）",
+      "layer": "data",
+      "kind": "protocol",
+      "file": null,
+      "description": "client 推源码快照到 server（files base64 + gitHead + gitChangedFiles）。",
+      "details": [
+        "curl POST http://host:port/snapshot {sessionId, files:{path:base64}, ...}",
+        "server pushSnapshot → state.infra.bridge = SessionCacheBridge",
+        "证据工具经 cache 算（不直读 client fs）"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "host-dsh",
+      "to": "ad-dsh",
+      "label": "apply(ctx, config)",
+      "kind": "deploy"
+    },
+    {
+      "from": "host-mcp",
+      "to": "ad-mcp-stdio",
+      "label": "MCP config → stdio",
+      "kind": "deploy"
+    },
+    {
+      "from": "host-mcp",
+      "to": "ad-mcp-http",
+      "label": "MCP config → http://:port/mcp",
+      "kind": "deploy"
+    },
+    {
+      "from": "host-pi",
+      "to": "ad-pi",
+      "label": "extension load",
+      "kind": "deploy"
+    },
+    {
+      "from": "host-pi",
+      "to": "ad-pi-client",
+      "label": "thin client load",
+      "kind": "deploy"
+    },
+    {
+      "from": "ad-dsh",
+      "to": "uc-catalog",
+      "label": "registerTools → buildCatalog",
+      "kind": "call"
+    },
+    {
+      "from": "ad-mcp-stdio",
+      "to": "uc-catalog",
+      "label": "tools/list+call",
+      "kind": "call"
+    },
+    {
+      "from": "ad-mcp-http",
+      "to": "uc-catalog",
+      "label": "tools/list+call",
+      "kind": "call"
+    },
+    {
+      "from": "ad-pi",
+      "to": "uc-catalog",
+      "label": "registerTool",
+      "kind": "call"
+    },
+    {
+      "from": "ad-pi-client",
+      "to": "data-mcp",
+      "label": "MCP client transport",
+      "kind": "call"
+    },
+    {
+      "from": "data-mcp",
+      "to": "ad-mcp-http",
+      "label": "JSON-RPC/SSE",
+      "kind": "call"
+    },
+    {
+      "from": "ad-mcp-stdio",
+      "to": "uc-session",
+      "label": "STDIO_SESSION_ID",
+      "kind": "call"
+    },
+    {
+      "from": "ad-mcp-http",
+      "to": "uc-session",
+      "label": "SessionManager per-session",
+      "kind": "call"
+    },
+    {
+      "from": "uc-session",
+      "to": "uc-catalog",
+      "label": "createSessionState → buildCatalog",
+      "kind": "call"
+    },
+    {
+      "from": "ad-dsh",
+      "to": "uc-companion",
+      "label": "installCompanionReminder",
+      "kind": "call"
+    },
+    {
+      "from": "ad-pi",
+      "to": "uc-companion",
+      "label": "tool_result hook",
+      "kind": "call"
+    },
+    {
+      "from": "uc-catalog",
+      "to": "pt-bridge",
+      "label": "infra.bridge 注入",
+      "kind": "port"
+    },
+    {
+      "from": "uc-catalog",
+      "to": "pt-facets",
+      "label": "3 参契约",
+      "kind": "port"
+    },
+    {
+      "from": "uc-catalog",
+      "to": "en-store",
+      "label": "resolveProject/listProjects",
+      "kind": "call"
+    },
+    {
+      "from": "uc-catalog",
+      "to": "en-validate",
+      "label": "validateProject",
+      "kind": "call"
+    },
+    {
+      "from": "uc-catalog",
+      "to": "en-edit",
+      "label": "refreshModules 等",
+      "kind": "call"
+    },
+    {
+      "from": "uc-catalog",
+      "to": "en-compile",
+      "label": "buildProject",
+      "kind": "call"
+    },
+    {
+      "from": "uc-catalog",
+      "to": "en-render",
+      "label": "renderProject",
+      "kind": "call"
+    },
+    {
+      "from": "uc-catalog",
+      "to": "en-changes",
+      "label": "change_open/close",
+      "kind": "call"
+    },
+    {
+      "from": "en-validate",
+      "to": "en-store",
+      "label": "fingerprintOf/loadAllModules",
+      "kind": "call"
+    },
+    {
+      "from": "en-edit",
+      "to": "en-store",
+      "label": "gitHead/fingerprintOf",
+      "kind": "call"
+    },
+    {
+      "from": "en-compile",
+      "to": "en-validate",
+      "label": "validateProject(opts)",
+      "kind": "call"
+    },
+    {
+      "from": "en-compile",
+      "to": "en-store",
+      "label": "loadAllModules",
+      "kind": "call"
+    },
+    {
+      "from": "en-render",
+      "to": "en-store",
+      "label": "readFile",
+      "kind": "call"
+    },
+    {
+      "from": "en-render",
+      "to": "en-template",
+      "label": "模板渲染",
+      "kind": "call"
+    },
+    {
+      "from": "en-close",
+      "to": "en-validate",
+      "label": "validateProject(0 error 强制)",
+      "kind": "call"
+    },
+    {
+      "from": "en-close",
+      "to": "en-compile",
+      "label": "buildProject",
+      "kind": "call"
+    },
+    {
+      "from": "en-close",
+      "to": "en-render",
+      "label": "renderProject(可选)",
+      "kind": "call"
+    },
+    {
+      "from": "en-close",
+      "to": "en-changes",
+      "label": "writeChangeFile",
+      "kind": "call"
+    },
+    {
+      "from": "en-store",
+      "to": "pt-bridge",
+      "label": "经 bridge（依赖反转）",
+      "kind": "port"
+    },
+    {
+      "from": "pt-bridge",
+      "to": "inf-local",
+      "label": "实现",
+      "kind": "impl"
+    },
+    {
+      "from": "pt-bridge",
+      "to": "inf-cache",
+      "label": "实现",
+      "kind": "impl"
+    },
+    {
+      "from": "inf-local",
+      "to": "data-repo",
+      "label": "直读 fs+git",
+      "kind": "io"
+    },
+    {
+      "from": "inf-cache",
+      "to": "data-snapshot",
+      "label": "读快照",
+      "kind": "io"
+    },
+    {
+      "from": "inf-fs",
+      "to": "data-root",
+      "label": "图数据 IO",
+      "kind": "io"
+    },
+    {
+      "from": "en-store",
+      "to": "data-root",
+      "label": "node:fs 读写",
+      "kind": "io"
+    },
+    {
+      "from": "uc-session",
+      "to": "data-snapshot",
+      "label": "pushSnapshot",
+      "kind": "io"
+    },
+    {
+      "from": "uc-catalog",
+      "to": "data-root",
+      "label": "project_init 建目录",
+      "kind": "io"
+    },
+    {
+      "from": "en-changes",
+      "to": "en-edit",
+      "label": "refresh/batchWrite",
+      "kind": "call"
+    },
+    {
+      "from": "en-edit",
+      "to": "en-validate",
+      "label": "0 error 前置校验",
+      "kind": "call"
+    },
+    {
+      "from": "en-compile",
+      "to": "en-render",
+      "label": "产物→渲染输入",
+      "kind": "call"
+    },
+    {
+      "from": "en-render",
+      "to": "data-root",
+      "label": "写 renders/",
+      "kind": "io"
+    },
+    {
+      "from": "en-template",
+      "to": "data-root",
+      "label": "模板→HTML 产物",
+      "kind": "io"
+    },
+    {
+      "from": "host-pi",
+      "to": "data-mcp",
+      "label": "原生 MCP mcp.json",
+      "kind": "deploy"
+    }
+  ],
+  "flows": [
+    {
+      "id": "f-dsh",
+      "name": "DSH 单边工具闭环",
+      "description": "DSH 宿主内完成 建项目 → 建模块 → 校验 → 构建 → 渲染 的完整闭环（LocalBridge 直读源码）。",
+      "steps": [
+        "host-dsh",
+        "ad-dsh",
+        "uc-catalog",
+        "en-store",
+        "data-root"
+      ]
+    },
+    {
+      "id": "f-mcp-stdio",
+      "name": "MCP stdio 工具调用",
+      "description": "Claude Code/Codex/Cursor 经 stdio 连 server：initialize 握手 → tools/list → tools/call（catalog 单源）。",
+      "steps": [
+        "host-mcp",
+        "ad-mcp-stdio",
+        "uc-session",
+        "uc-catalog"
+      ]
+    },
+    {
+      "id": "f-pi-local",
+      "name": "pi 扩展工具调用",
+      "description": "pi 宿主加载本地扩展：JSON Schema→typebox 投影注册 31 工具 → 调用经 catalog → engine。",
+      "steps": [
+        "host-pi",
+        "ad-pi",
+        "uc-catalog",
+        "en-store"
+      ]
+    },
+    {
+      "id": "f-dual-http",
+      "name": "Dual-side HTTP 调用（pi 原生 MCP）",
+      "description": "pi 经原生 MCP（mcp.json）连长驻 server：StreamableHTTP → SessionManager per-session catalog → engine。Claude Code/Cursor/Codex 同路径。",
+      "steps": [
+        "host-pi",
+        "data-mcp",
+        "ad-mcp-http",
+        "uc-session",
+        "uc-catalog",
+        "en-store",
+        "data-root"
+      ]
+    },
+    {
+      "id": "f-snapshot",
+      "name": "R3 快照推送",
+      "description": "client 推源码快照 → pushSnapshot → SessionCacheBridge → 证据工具经 cache 算（不访 client fs）。pi 经原生 MCP 连，快照经独立 HTTP POST。",
+      "steps": [
+        "host-pi",
+        "data-mcp",
+        "ad-mcp-http",
+        "uc-session",
+        "data-snapshot",
+        "inf-cache",
+        "pt-bridge",
+        "uc-catalog",
+        "en-store"
+      ]
+    },
+    {
+      "id": "f-evidence",
+      "name": "证据校验（fingerprint）",
+      "description": "validate/fingerprint/module_refresh 的证据校验：fingerprintOf/gitHead 经 bridge → repoRoot（单边 LocalBridge 或 dual-side SessionCacheBridge）。",
+      "steps": [
+        "uc-catalog",
+        "en-store",
+        "pt-bridge",
+        "inf-local",
+        "data-repo"
+      ]
+    },
+    {
+      "id": "f-change",
+      "name": "变更闭环（open→close）",
+      "description": "normify_change_open → 实现 → normify_change_close（强制 0 error + revision.after 戳 git HEAD）。",
+      "steps": [
+        "uc-catalog",
+        "en-changes",
+        "en-edit",
+        "en-validate",
+        "en-close",
+        "en-compile",
+        "en-render",
+        "data-root"
+      ]
+    },
+    {
+      "id": "f-companion",
+      "name": "Companion 提醒",
+      "description": "连续写工具达阈值 → companionReminder 注入提醒（server 计 normify 写 / pi-client 计外部 write）。",
+      "steps": [
+        "ad-pi",
+        "uc-companion"
+      ]
+    },
+    {
+      "id": "f-auth",
+      "name": "Auth 隔离（per-user 图）",
+      "description": "token → parseAuthConfig/resolveSessionAuth → SessionState identity → resolve 闭包 allowlist 校验 → per-user 路径（模型 i 完全独立）。",
+      "steps": [
+        "ad-mcp-http",
+        "uc-session",
+        "uc-catalog",
+        "en-store",
+        "data-root"
+      ]
+    },
+    {
+      "id": "f-build-render",
+      "name": "构建+渲染产物链",
+      "description": "validate(0 error) → buildProject(tree.json/receipt) → renderProject(HTML 模板)。",
+      "steps": [
+        "uc-catalog",
+        "en-validate",
+        "en-compile",
+        "en-store",
+        "en-render",
+        "en-template",
+        "data-root"
+      ]
+    }
+  ]
+}

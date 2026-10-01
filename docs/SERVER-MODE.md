@@ -27,9 +27,9 @@ S0–S6 把 normify 拆成"平台无关 catalog + 三适配器"（DSH stdio / MC
 
 25+ 图编辑工具只读写图数据（`rootDir/.../normify-<slug>/`）。模块 `source` 字段仅存路径字符串。5 个证据工具（fingerprint/sync/validate+repoRoot/module_refresh/build+repoRoot）给定 repoRoot 才读用户源码（经 Bridge）。
 
-### 2.3 pi 无内置 MCP client
+### 2.3 pi 原生 MCP（0.99.2+，已解）
 
-pi 文档明确（`usage.md:309` / `README.md:499` "No MCP"）。Claude Code/Cursor/Codex 内置 MCP client（config-only），pi 需 thin 扩展桥接。
+pi 0.99.2+ 原生支持 MCP（stdio + streamable HTTP，`mcp.json` 配置，同 Claude Code/Cursor）。原“pi 无内置 MCP client”前提（需 thin 扩展桥接）已过时；`src/pi/normify-client.ts` 裁为 companion-only 扩展（仅计外部写，工具连经由 pi 原生 MCP）。详见 SETUP.md §3b/§4.2。
 
 ## 3. 统一 Session 抽象（前置 Action 核心，§session-isolation）
 

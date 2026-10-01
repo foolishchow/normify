@@ -49,12 +49,24 @@ normify 提供 3 个适配器入口（共享同一 catalog，31 个工具零逻�
 
 ## 3. pi（@earendil-works/pi-coding-agent）
 
+**pi 0.99.2+ 原生支持 MCP**（stdio + streamable HTTP，`mcp.json` 配置）。故 pi 有两种接入 normify 的方式：
+
+### 3a. 本地扩展（in-process，最高效 + 全 companion）
+
 - 入口：`src/pi/normify.ts`（pi 自动发现 .ts glob，非 .js）
 - 前置：`npm install`（pi 加载 src/pi/normify.ts → catalog → engine/policy+frontmatter → `yaml`，需 repo node_modules 提供；typebox/pi-ai 由 repo devDeps 或 pi node_modules 解析）
 - 安装：软链 `src/pi/normify.ts` → `~/.pi/agent/extensions/normify.ts`（或 `pi -e ./src/pi/normify.ts`）
 - env：启动 pi 前在 shell 导出（`export NORMIFY_ROOT_DIR=<project>`；`export NORMIFY_REQUIRE_BILINGUAL=1`；可选 `export NORMIFY_DEV_COMPANION_REMINDER=1; export NORMIFY_DEV_COMPANION_REMINDER_AFTER=8`），或经 pi settings 配置
 - SKILL.md：`~/.pi/agent/skills/normify-gen/`，或 settings `"skills": ["<repo>/skills"]`
 - 验证：pi 会话 `/reload` 后调 `normify_help topic=tools` → 31 工具
+
+### 3b. 原生 MCP（经 mcp.json，与其他 MCP host 统一）
+
+- 单边 stdio：`~/.pi/agent/mcp.json` 或 `.pi/mcp.json`：`{"mcpServers":{"normify":{"command":"node","args":["<repo>/lib/mcp/server.js"],"env":{"NORMIFY_ROOT_DIR":"<project>","NORMIFY_REQUIRE_BILINGUAL":"1"}}}}`
+- dual-side http：同 Claude Code/Cursor（§4.2）
+- 工具名 `mcp__normify__normify_*`；exposure 可选 `direct`（常用）或 `codemode`/`deferred`
+- 命令：`pi mcp add normify -- node <repo>/lib/mcp/server.js` / `pi mcp list` / 会话内 `/mcp`
+- companion：server 侧计 normify_* 写；外部写计数需装 §4.4 companion-only 扩展
 
 ## 4. Dual-Side Mode（多 agent 连同一 server）
 
@@ -79,7 +91,7 @@ NORMIFY_TRANSPORT=http NORMIFY_PORT=3000 NORMIFY_ROOT_DIR=<rootDir> node lib/mcp
 | 宿主 | 连法 |
 | --- | --- |
 | Claude Code / Cursor / Codex | MCP config 指向 `http://<host>:<port>/mcp`（内置 MCP client，零代码）|
-| pi | 瘦客户端扩展 `src/pi/normify-client.ts`（MCP `StreamableHTTPClientTransport` → `pi.registerTool` 桥；`NORMIFY_MCP_URL=http://<host>:<port>/mcp`）|
+| pi（0.99.2+） | 原生 MCP：`mcp.json` 指向 `http://<host>:<port>/mcp`（同 Claude Code/Cursor）；可选装 §4.4 companion-only 扩展计外部写 |
 
 ### 4.3 R3 推送快照（证据工具经 SessionCacheBridge）
 
@@ -90,13 +102,14 @@ curl -X POST http://<host>:<port>/snapshot -H 'content-type: application/json' \
   -d '{"sessionId":"<mcp-session-id>","files":{"src/a.ts":"<base64>"},"gitHead":{"sha":"...","error":null},"gitChangedFiles":{"files":[...],"error":null}}'
 ```
 
-- server 置 `SessionState.env.bridge = SessionCacheBridge`（catalog 闭包调用时读 `env.bridge`）；`normify_fingerprint` 等经 cache 算，不直读 client fs。
-- 与 stdio 路径（LocalBridge 直读本地 fs）向后兼容；无 `env.bridge` 时回退 LocalBridge。
+- server 置 `state.infra.bridge = SessionCacheBridge`（catalog 闭包调用时读 `infra.bridge`）；`normify_fingerprint` 等经 cache 算，不直读 client fs。
+- 与 stdio 路径（LocalBridge 直读本地 fs）向后兼容；无 `infra.bridge` 时回退 LocalBridge。
 
 ### 4.4 companion split
 
 - server-side：`SessionState.companionCount`（per-session，计 normify_* `behavior!=='read'` 调用）。
-- pi-client-side：`createCompanionHandler`（WRITE_TOOLS，计 pi 外部写/edit），在瘦客户端内（不拉 engine）。
+- pi-client-side：companion-only 扩展 `src/pi/normify-client.ts`（`createCompanionHandler`，WRITE_TOOLS，计 pi 外部写/edit）。pi tool pipeline 对 MCP 工具亦触发 `tool_result`（pi docs/mcp.md "Permissions"），故装本扩展后原生 MCP 路径仍能计外部写。**不拉 catalog/engine**（保持 thin）。
+- 其他 MCP host（Claude Code/Cursor/Codex）：无外部写计数（server 只计 normify_* 写）。
 
 ### 4.5 验证
 

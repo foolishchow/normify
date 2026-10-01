@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>normify · 多平台架构</title>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#131c2e; --panel2:#1a2740; --border:#24344f;
+    --text:#e2e8f0; --muted:#8fa3bf; --accent:#38bdf8;
+    --host:#475569; --adapter:#3b82f6; --usecase:#8b5cf6; --port:#0ea5e9;
+    --engine:#f59e0b; --infra:#10b981; --data:#ec4899;
+    --flow:#fbbf24;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:"Segoe UI",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden}
+  #app{display:flex;flex-direction:column;height:100vh}
+
+  /* header */
+  header{display:flex;align-items:center;gap:14px;padding:10px 18px;background:linear-gradient(180deg,#152238,#0d1524);border-bottom:1px solid var(--border);flex-shrink:0}
+  header .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#38bdf8,#8b5cf6);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff}
+  header h1{font-size:16px;font-weight:700;letter-spacing:.3px}
+  header .sub{font-size:12px;color:var(--muted)}
+  header .badge{margin-left:auto;display:flex;gap:8px}
+  header .badge span{font-size:11px;padding:3px 9px;border-radius:99px;border:1px solid var(--border);color:var(--muted);background:var(--panel)}
+  header .badge b{color:var(--accent);font-weight:700}
+
+  main{flex:1;display:flex;min-height:0}
+  #diagram{flex:1;position:relative;min-width:0}
+  svg{width:100%;height:100%;display:block}
+  #tooltip{position:absolute;pointer-events:none;display:none;z-index:30;max-width:340px;background:#0f1a2e;border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.55);font-size:12px;line-height:1.5}
+  #tooltip .tt-title{font-weight:700;font-size:13px;margin-bottom:2px;display:flex;align-items:center;gap:6px}
+  #tooltip .tt-file{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--muted)}
+  #tooltip .tt-desc{color:#cbd5e1;margin-top:3px}
+  #tooltip .tt-layer{font-size:10px;padding:1px 7px;border-radius:99px;color:#fff;font-weight:600}
+  #detail{position:absolute;right:16px;bottom:16px;z-index:20;width:min(360px,calc(100% - 32px));background:#0f1a2e;border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 12px 34px rgba(0,0,0,.6);display:none;font-size:12.5px;line-height:1.55}
+  #detail h3{font-size:14px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+  #detail .d-file{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted)}
+  #detail .d-desc{color:#cbd5e1;margin:6px 0 8px}
+  #detail ul{margin:0 0 0 16px;color:#a8bcd4}
+  #detail li{margin-bottom:3px}
+  #detail .close{position:absolute;top:8px;right:10px;background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer}
+  #detail .close:hover{color:#fff}
+
+  /* sidebar */
+  aside{width:320px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+  .side-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+  .side-head h2{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+  .side-head .legend{font-size:10.5px;color:var(--muted)}
+  .flow-list{flex:1;overflow-y:auto;padding:8px}
+  .flow-item{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:all .15s;position:relative}
+  .flow-item:hover{border-color:#3b5b8a;transform:translateX(2px)}
+  .flow-item.active{border-color:var(--flow);background:#1c2438;box-shadow:0 0 0 1px var(--flow),0 4px 14px rgba(251,191,36,.12)}
+  .flow-item .f-name{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .flow-item .f-id{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--muted);background:#0b1220;padding:1px 6px;border-radius:5px}
+  .flow-item .f-desc{font-size:11px;color:#a8bcd4;margin-top:5px;line-height:1.5}
+  .flow-item .f-steps{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+  .flow-item .f-step{font-size:9.5px;font-family:ui-monospace,Menlo,monospace;padding:1px 6px;border-radius:5px;background:#0b1220;color:#9db8d6;border:1px solid #22334c}
+  .flow-item .f-step.hl{background:rgba(251,191,36,.18);color:var(--flow);border-color:rgba(251,191,36,.45)}
+  .side-foot{padding:10px 16px;border-top:1px solid var(--border);font-size:10.5px;color:var(--muted);display:flex;justify-content:space-between;flex-shrink:0}
+  .side-foot .kbd{font-family:ui-monospace,Menlo,monospace;background:#0b1220;border:1px solid var(--border);border-radius:4px;padding:0 4px}
+
+  /* legend */
+  #legend{position:absolute;left:14px;bottom:14px;z-index:15;background:rgba(15,26,46,.85);backdrop-filter:blur(4px);border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:10.5px;display:flex;flex-direction:column;gap:4px}
+  #legend .lg-row{display:flex;align-items:center;gap:7px}
+  #legend .lg-swatch{width:11px;height:11px;border-radius:3px}
+
+  /* node styling (SVG) */
+  .node rect{transition:all .2s;cursor:pointer}
+  .node text{font-family:ui-monospace,Menlo,monospace;fill:var(--text);font-size:11px;font-weight:600;pointer-events:none}
+  .node:hover rect{filter:brightness(1.25);stroke-width:2}
+  .node.selected rect{stroke:#fff;stroke-width:2.5}
+  .node.flowed rect{stroke:var(--flow);stroke-width:2.5;filter:drop-shadow(0 0 8px rgba(251,191,36,.55))}
+  .edge path{stroke:#3a4e6e;stroke-width:1.4;fill:none;transition:all .2s;opacity:.75}
+  .edge.flowed path{stroke:var(--flow);stroke-width:2.6;opacity:1;filter:drop-shadow(0 0 5px rgba(251,191,36,.6))}
+  .edge.dim path{opacity:.12}
+  .node.dim rect{opacity:.25}
+  .node.dim text{opacity:.25}
+  .edge .elabel{font-size:8.5px;fill:var(--muted);font-family:ui-monospace,Menlo,monospace;pointer-events:none}
+  .edge.flowed .elabel{fill:var(--flow)}
+  marker path{stroke:none}
+
+  @media (max-width:900px){
+    aside{width:250px}
+  }
+  @media (max-width:680px){
+    aside{position:absolute;right:0;top:50px;bottom:0;z-index:25;box-shadow:-8px 0 24px rgba(0,0,0,.5);transform:translateX(105%);transition:transform .25s}
+    aside.open{transform:none}
+    #panelToggle{display:block}
+    header .badge{display:none}
+  }
+  #panelToggle{display:none;position:absolute;right:14px;top:56px;z-index:26;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">N</div>
+    <div>
+      <h1>normify 多平台架构</h1>
+      <div class="sub">归一化架构图构建器 · 单 catalog（31 工具）× 4 适配器 · 单边 / Dual-Side</div>
+    </div>
+    <div class="badge">
+      <span>工具 <b>31</b></span>
+      <span>节点 <b id="bcNodes">–</b></span>
+      <span>流程 <b id="bcFlows">–</b></span>
+      <span>分层 <b>7</b></span>
+    </div>
+  </header>
+  <button id="panelToggle">☰ 流程</button>
+  <main>
+    <div id="diagram">
+      <svg id="svg"></svg>
+      <div id="legend"></div>
+      <div id="tooltip"></div>
+      <div id="detail"></div>
+    </div>
+    <aside id="sidebar">
+      <div class="side-head"><h2>流程面板</h2><div class="legend">点击流程 → 高亮路径</div></div>
+      <div class="flow-list" id="flowList"></div>
+      <div class="side-foot"><span>悬停节点查看信息</span><span class="kbd">点击节点 → 详情</span></div>
+    </aside>
+  </main>
+</div>
+
+<script>
+/* ============ 数据（与 architecture.json 同源） ============ */
+const LAYERS = ["host","adapter","usecase","port","engine","infra","data"];
+const LAYER_COLOR = { host:"#475569", adapter:"#3b82f6", usecase:"#8b5cf6", port:"#0ea5e9", engine:"#f59e0b", infra:"#10b981", data:"#ec4899" };
+const LAYER_NAME = { host:"宿主", adapter:"适配器", usecase:"用例层", port:"端口", engine:"引擎", infra:"基础设施", data:"数据/协议" };
+
+const NODES = [
+  {id:"host-dsh",label:"DeepSeek Harness",layer:"host",file:null,description:"DSH 宿主（cordis 容器）。加载 normify 插件（lib/index.js apply(ctx, config)）。",details:["入口 lib/index.js（apply(ctx, config: Config)）","Config: rootDir/requireBilingual/devCompanionReminder（schemastery）","registerSkill 自动注册 skills/normify-gen/SKILL.md"]},
+  {id:"host-mcp",label:"MCP 宿主",layer:"host",file:null,description:"Claude Code / Codex / Cursor。经 MCP config 启动或连接 normify server。",details:["stdio：.mcp.json / config.toml 指向 command","http：MCP config 指向 http://host:port/mcp","内置 MCP client（零代码连接）"]},
+  {id:"host-pi",label:"pi 宿主",layer:"host",file:null,description:"@earendil-works/pi-coding-agent。加载 normify 扩展（本地扩展或瘦客户端）。",details:["本地：src/pi/normify.ts（自动发现 .ts glob）","瘦客户端：src/pi/normify-client.ts（连 HTTP server）","settings 配置 env / --approve trust"]},
+  {id:"ad-dsh",label:"DSH 适配器",layer:"adapter",file:"src/tools.ts + index.ts",description:"DSH 插件入口。registerTools(ctx, infra, policy) 遍历 catalog 注册 31 工具到 DSH ToolService。",details:["apply(ctx, config) → registerTools(ctx, {rootDir}, {requireBilingual})","toolenv-split 后签名 (infra, policy)，无 security","execute 直接用 entry.execute（platform-agnostic）"]},
+  {id:"ad-mcp-stdio",label:"MCP stdio 适配器",layer:"adapter",file:"src/mcp/server.ts",description:"MCP stdio server（NORMIFY_TRANSPORT=stdio 默认）。单用户本地，向后兼容。",details:["stdio JSON-RPC 2.0（SDK 握手协商协议版本）","STDIO_SESSION_ID 单 session","tools/list + tools/call 复用 catalog"]},
+  {id:"ad-mcp-http",label:"MCP HTTP 适配器",layer:"adapter",file:"src/mcp/server.ts",description:"MCP HTTP server（NORMIFY_TRANSPORT=http）。长驻，多 agent 多 session。",details:["每会话独立 transport+Server（SDK stateful）","POST /snapshot 路由（R3 快照）","SessionManager per-session catalog/companionCount","auth: NORMIFY_AUTH_TOKENS"]},
+  {id:"ad-pi",label:"pi 扩展适配器",layer:"adapter",file:"src/pi/normify.ts",description:"pi 本地扩展。registerPiTools(pi, infra, policy) 经 pi.registerTool 注册 31 工具。",details:["JSON Schema → typebox 投影（StringEnum）","companion 钩子：pi.on('tool_result')（WRITE_TOOLS）","异步 factory 加载"]},
+  {id:"ad-pi-client",label:"pi companion 扩展",layer:"adapter",file:"src/pi/normify-client.ts",description:"pi companion-only 扩展（pi 0.99.2+ 原生 MCP 后）。仅计 pi 外部写/edit；工具连经由 pi 原生 MCP（mcp.json）。",details:["pi 0.99.2+ 原生 MCP（stdio+HTTP，mcp.json）","本扩展仅 createCompanionHandler（WRITE_TOOLS 计外部写）","pi tool pipeline 对 MCP 工具触发 tool_result","server 侧 companionCount 计 normify_* 写；split 完整","不拉 catalog/engine（保持 thin）"]},
+  {id:"uc-catalog",label:"Catalog（31 工具）",layer:"usecase",file:"src/catalog.ts",description:"平台无关的 31 个 normify_* 工具。buildCatalog(security, infra, policy) 单源，4 adapter 共用。",details:["buildCatalog(security, infra, policy) → ToolEntry[]×31","resolve 闭包：userScope/projectAllowlist 校验 + 路径作用域","evidence handler：infra.bridge ?? new LocalBridge(repoRoot)","1806 行单文件（parity 前提）"]},
+  {id:"uc-session",label:"Session 抽象",layer:"usecase",file:"src/session.ts",description:"统一 Session 抽象。SessionManager + SessionState（stdio 1 / http N 同形状）。",details:["SessionState{userId, projectAllowlist, infra, policy, companionCount, catalog}","createSessionState：identity←token(顶层)、infra←env、policy←env","pushSnapshot(state, bridge) → state.infra.bridge","parseAuthConfig/resolveSessionAuth"]},
+  {id:"uc-companion",label:"Companion 提醒",layer:"usecase",file:"src/companion.ts",description:"共享 companion 提醒模块。companionReminder/parseCompanionConfig/WRITE_TOOLS。",details:["WRITE_TOOLS 正则：write/edit/apply_patch 等","默认关（=1 开），threshold 默认 8","提醒文本跨 host 字节一致"]},
+  {id:"pt-bridge",label:"RepoBridge 接口",layer:"port",file:"src/bridge.ts",description:"仓库桥端口。证据工具经此访问 repoRoot（readFile/exists/gitHead/gitChangedFiles）。",details:["clean 接口：readFile/exists/gitHead/gitChangedFiles","path 相对 repoRoot","LocalBridge / SessionCacheBridge 两实现","engine/catalog 只认接口（依赖反转）"]},
+  {id:"pt-facets",label:"Facet 契约",layer:"port",file:"src/catalog.ts",description:"SecurityContext/InfraEnv/Policy 3 facet。buildCatalog 入参契约（toolenv-split）。",details:["SecurityContext{userScope?, projectAllowlist?} ← auth","InfraEnv{rootDir, bridge?} ← config/R3","Policy{requireBilingual} ← config","auth→identity / config→infra / config→policy"]},
+  {id:"en-store",label:"Store（图 DB+证据）",layer:"engine",file:"src/engine/store.ts",description:"rootDir 图数据库读写 + 证据原语（fingerprintOf/gitHead/gitChangedFiles）+ resolveProject/listProjects/loadAllModules。",details:["resolveProject(..., userScope)：per-user 路径 + 逃逸防护","fingerprintOf(bridge, sources)：SHA-256 全量","engine 零 LocalBridge 依赖（arch-cleanup）","node:fs 只读写 rootDir（已知妥协）"]},
+  {id:"en-validate",label:"Validate（架构校验）",layer:"engine",file:"src/engine/validate.ts",description:"validateProject：L1-L3 规则 + 证据校验（source 存在性 + fingerprint 一致性）。",details:["L1 结构/命名/双语 / L2 API 依赖 / L3 规则","repoRoot 给定时经 bridge.exists + fingerprintOf","0 error 硬约束（change_close 依赖）"]},
+  {id:"en-edit",label:"Edit（编辑算子）",layer:"engine",file:"src/engine/edit.ts",description:"batchWrite/patchModule/moveModuleTree/refreshModules。模块图编辑 + fingerprint 重算。",details:["refreshModules：gitHead(bridge)+fingerprintOf(bridge)","moveModuleTree：id 级联 rewiring + 渲染随迁","821 行单文件（巨石）"]},
+  {id:"en-compile",label:"Compile（产物）",layer:"engine",file:"src/engine/compile.ts",description:"buildProject：校验后生成 tree.json/receipt 产物（经 validateProject 前置）。",details:["BuildOptions extends ValidateOptions（bridge 透传）","0 error 才产出；change_count 反映"]},
+  {id:"en-render",label:"Render（HTML）",layer:"engine",file:"src/engine/render.ts",description:"renderProject：从渲染数据生成 HTML 产物（只读 projectDir 图数据）。",details:["模板渲染（template.ts）","不碰 repoRoot fs"]},
+  {id:"en-close",label:"Change Close",layer:"engine",file:"src/engine/companion.ts",description:"closeChange：变更关闭（强制 0 error + revision.after 戳 git HEAD）。",details:["refresh→validate→build→render→写 change 文件","revision.after = gitHead(bridge).sha（真特性）","文件重名 companion.ts 但非 reminder"]},
+  {id:"en-changes",label:"Changes（变更记录）",layer:"engine",file:"src/engine/changes.ts",description:"change 记录生命周期：open/list/update/close 的加载/校验/写入。",details:["l1ValidateChange/loadChangeFile/writeChangeFile","变更留痕（changes/<id>.json）"]},
+  {id:"en-layout",label:"Layout（渲染数据）",layer:"engine",file:"src/engine/layout.ts",description:"渲染数据层（layouts 派生）：edgeKey/l1ValidateLayout/读写渲染 JSON。",details:["LAYOUT_SCHEMA_VERSION 版本化","move/refresh 时渲染随迁"]},
+  {id:"en-policy",label:"Policy（架构规则）",layer:"engine",file:"src/engine/policy.ts",description:"架构规则（policy.yml）：L3 校验（如 no-core-to-consumer）。",details:["loadPolicyFile/evaluatePolicy","project_init 自动安装默认规则"]},
+  {id:"en-frontmatter",label:"Frontmatter（MD）",layer:"engine",file:"src/engine/frontmatter.ts",description:"模块 MD 解析/序列化（YAML frontmatter + 正文）。",details:["parseModuleText/serializeModule","l1Validate（模块级规则）"]},
+  {id:"en-template",label:"Template（渲染模板）",layer:"engine",file:"src/engine/template.ts",description:"HTML 渲染模板（1767 行巨石，render.ts 消费）。",details:["renderProject 读模板 → HTML","巨石文件（对外 API 不变）"]},
+  {id:"en-base",label:"基础模块",layer:"engine",file:"src/engine/{ids,diag,types}.ts",description:"id 派生（deriveParent/moduleFilePath）、诊断（diag）、共享类型。",details:["叶子模块，无反向依赖","全部 engine 公共底座"]},
+  {id:"inf-local",label:"LocalBridge",layer:"infra",file:"src/bridge.ts",description:"本地 fs+git 桥（DSH/stdio：client fs = server fs）。",details:["new LocalBridge(repoRoot)：内部 join","readFile/exists/gitHead(spawnSync)/gitChangedFiles"]},
+  {id:"inf-cache",label:"SessionCacheBridge",layer:"infra",file:"src/bridge.ts",description:"R3 推送快照桥（server 不访 client fs）。",details:["从 /snapshot 推送字节读（files base64）","fingerprint 经 cache == LocalBridge 直算（A-007）","server 无 client 源码仍工作（A-008）"]},
+  {id:"inf-fs",label:"node:fs + git",layer:"infra",file:"node:fs, node:child_process",description:"rootDir 图数据 IO + git 原语（engine 直接使用）。",details:["engine 直读 rootDir（已知妥协）","spawnSync git（经 LocalBridge 封装）"]},
+  {id:"data-root",label:"rootDir 图数据库",layer:"data",file:"<rootDir>/normify-<slug>/",description:"normify 结构数据项目根（modules/+layouts/+changes/+renders/+policy.yml）。",details:["per-user：rootDir/[<userId>/]normify-<slug>/（模型 i）","无 token=default 路径不变","≠ repoRoot（用户源码）"]},
+  {id:"data-repo",label:"repoRoot 用户源码",layer:"data",file:"<repoRoot>/",description:"用户源代码仓库（证据校验对象，经 bridge 只读）。",details:["fingerprint/source 存在性/git HEAD 证据","单边 LocalBridge 直读；dual-side SessionCacheBridge","engine 不经 bridge 不碰 repoRoot"]},
+  {id:"data-mcp",label:"MCP 协议",layer:"data",file:"@modelcontextprotocol/sdk",description:"MCP JSON-RPC 2.0 / StreamableHTTP（initialize/tools/list/call）。",details:["SDK v1.30.1（stateful transport-per-session）","stdio 单 session；http 每会话独立 transport","claude/codex/cursor 内置 client；pi 需瘦客户端"]},
+  {id:"data-snapshot",label:"R3 快照 /snapshot",layer:"data",file:null,description:"client 推源码快照（files base64 + gitHead + gitChangedFiles）。",details:["curl POST /snapshot {sessionId, files:{path:base64}, ...}","pushSnapshot → state.infra.bridge = SessionCacheBridge","证据工具经 cache 算"]}
+];
+const EDGES = [
+  {from:"host-dsh",to:"ad-dsh",label:"apply(ctx,config)"},
+  {from:"host-mcp",to:"ad-mcp-stdio",label:"MCP config→stdio"},
+  {from:"host-mcp",to:"ad-mcp-http",label:"MCP config→http"},
+  {from:"host-pi",to:"ad-pi",label:"extension load"},
+  {from:"host-pi",to:"ad-pi-client",label:"companion ext"},
+  {from:"host-pi",to:"data-mcp",label:"原生 MCP mcp.json"},
+  {from:"ad-dsh",to:"uc-catalog",label:"registerTools→buildCatalog"},
+  {from:"ad-mcp-stdio",to:"uc-catalog",label:"tools/list+call"},
+  {from:"ad-mcp-http",to:"uc-catalog",label:"tools/list+call"},
+  {from:"ad-pi",to:"uc-catalog",label:"registerTool"},
+  {from:"ad-pi-client",to:"data-mcp",label:"MCP client"},
+  {from:"data-mcp",to:"ad-mcp-http",label:"JSON-RPC/SSE"},
+  {from:"ad-mcp-stdio",to:"uc-session",label:"STDIO_SESSION_ID"},
+  {from:"ad-mcp-http",to:"uc-session",label:"SessionManager"},
+  {from:"uc-session",to:"uc-catalog",label:"createSessionState→buildCatalog"},
+  {from:"ad-dsh",to:"uc-companion",label:"companion hook"},
+  {from:"ad-pi",to:"uc-companion",label:"tool_result hook"},
+  {from:"uc-catalog",to:"pt-bridge",label:"infra.bridge"},
+  {from:"uc-catalog",to:"pt-facets",label:"3 参契约"},
+  {from:"uc-catalog",to:"en-store",label:"resolveProject"},
+  {from:"uc-catalog",to:"en-validate",label:"validateProject"},
+  {from:"uc-catalog",to:"en-edit",label:"refreshModules"},
+  {from:"uc-catalog",to:"en-compile",label:"buildProject"},
+  {from:"uc-catalog",to:"en-render",label:"renderProject"},
+  {from:"uc-catalog",to:"en-changes",label:"change_open/close"},
+  {from:"en-validate",to:"en-store",label:"fingerprintOf"},
+  {from:"en-edit",to:"en-store",label:"gitHead/fp"},
+  {from:"en-compile",to:"en-validate",label:"validateProject"},
+  {from:"en-compile",to:"en-store",label:"loadAllModules"},
+  {from:"en-render",to:"en-store",label:"readFile"},
+  {from:"en-render",to:"en-template",label:"模板渲染"},
+  {from:"en-close",to:"en-validate",label:"validate(0 error)"},
+  {from:"en-close",to:"en-compile",label:"buildProject"},
+  {from:"en-close",to:"en-render",label:"renderProject"},
+  {from:"en-close",to:"en-changes",label:"writeChangeFile"},
+  {from:"en-store",to:"pt-bridge",label:"经 bridge"},
+  {from:"pt-bridge",to:"inf-local",label:"实现"},
+  {from:"pt-bridge",to:"inf-cache",label:"实现"},
+  {from:"inf-local",to:"data-repo",label:"直读 fs+git"},
+  {from:"inf-cache",to:"data-snapshot",label:"读快照"},
+  {from:"inf-fs",to:"data-root",label:"图数据 IO"},
+  {from:"en-store",to:"data-root",label:"node:fs"},
+  {from:"uc-session",to:"data-snapshot",label:"pushSnapshot"},
+  {from:"uc-catalog",to:"data-root",label:"project_init"},
+  {from:"en-changes",to:"en-edit",label:"refresh/batchWrite"},
+  {from:"en-edit",to:"en-validate",label:"0 error 前置"},
+  {from:"en-compile",to:"en-render",label:"产物→渲染"},
+  {from:"en-render",to:"data-root",label:"写 renders/"},
+  {from:"en-template",to:"data-root",label:"模板→HTML"}
+];
+const FLOWS = [
+  {id:"f-dsh",name:"DSH 单边工具闭环",description:"DSH 宿主内 建项目→建模块→校验→构建→渲染 完整闭环（LocalBridge 直读源码）。",steps:["host-dsh","ad-dsh","uc-catalog","en-store","data-root"]},
+  {id:"f-mcp-stdio",name:"MCP stdio 工具调用",description:"Claude Code/Codex/Cursor 经 stdio：initialize → tools/list → tools/call（catalog 单源）。",steps:["host-mcp","ad-mcp-stdio","uc-session","uc-catalog"]},
+  {id:"f-pi-local",name:"pi 扩展工具调用",description:"pi 加载本地扩展：JSON Schema→typebox 注册 31 工具 → 调用经 catalog → engine。",steps:["host-pi","ad-pi","uc-catalog","en-store"]},
+  {id:"f-dual-http",name:"Dual-side HTTP 调用（pi 原生 MCP）",description:"pi 经原生 MCP（mcp.json）连长驻 server：StreamableHTTP → SessionManager per-session catalog → engine。Claude Code/Cursor/Codex 同路径。",steps:["host-pi","data-mcp","ad-mcp-http","uc-session","uc-catalog","en-store","data-root"]},
+  {id:"f-snapshot",name:"R3 快照推送",description:"client 推源码快照 → pushSnapshot → SessionCacheBridge → 证据工具经 cache 算（不访 client fs）。pi 经原生 MCP 连，快照经独立 HTTP POST。",steps:["host-pi","data-mcp","ad-mcp-http","uc-session","data-snapshot","inf-cache","pt-bridge","uc-catalog","en-store"]},
+  {id:"f-evidence",name:"证据校验（fingerprint）",description:"validate/fingerprint/module_refresh 证据校验：fingerprintOf/gitHead 经 bridge → repoRoot。",steps:["uc-catalog","en-store","pt-bridge","inf-local","data-repo"]},
+  {id:"f-change",name:"变更闭环（open→close）",description:"change_open → 实现 → change_close（强制 0 error + revision.after 戳 HEAD）。",steps:["uc-catalog","en-changes","en-edit","en-validate","en-close","en-compile","en-render","data-root"]},
+  {id:"f-companion",name:"Companion 提醒",description:"连续写工具达阈值 → companionReminder 注入提醒（server 计 normify 写 / pi-client 计外部 write）。",steps:["ad-pi","uc-companion"]},
+  {id:"f-auth",name:"Auth 隔离（per-user 图）",description:"token → resolveSessionAuth → SessionState identity → resolve 闭包 allowlist → per-user 路径。",steps:["ad-mcp-http","uc-session","uc-catalog","en-store","data-root"]},
+  {id:"f-build-render",name:"构建+渲染产物链",description:"validate(0 error) → buildProject(tree.json/receipt) → renderProject(HTML 模板)。",steps:["uc-catalog","en-validate","en-compile","en-store","en-render","en-template","data-root"]}
+];
+
+/* ============ 布局（分层网格） ============ */
+const W = 1500, H = 1000;
+const ROW_H = 128, PAD_X = 60, PAD_Y = 46, TOP = 26;
+const pos = {};
+(function layout(){
+  const byLayer = {};
+  for(const n of NODES) (byLayer[n.layer]=byLayer[n.layer]||[]).push(n);
+  LAYERS.forEach((ly,i)=>{
+    const arr = byLayer[ly]||[];
+    const n = arr.length;
+    const span = W - PAD_X*2;
+    arr.forEach((node,j)=>{
+      const x = n===1 ? W/2 : PAD_X + span*(j+0.5)/n;
+      const y = TOP + i*ROW_H + ROW_H*0.5;
+      pos[node.id] = {x, y, w: nodeW(node), h: 34};
+    });
+  });
+  function nodeW(n){ const l=n.label.length; return Math.max(118, l*6.4+30); }
+})();
+
+/* ============ SVG 渲染 ============ */
+const svg = document.getElementById("svg");
+svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+svg.setAttribute("preserveAspectRatio","xMidYMid meet");
+const NS = "http://www.w3.org/2000/svg";
+const defs = document.createElementNS(NS,"defs");
+svg.appendChild(defs);
+
+// 箭头 marker
+function addMarker(color,id){
+  const m=document.createElementNS(NS,"marker");
+  m.setAttribute("id",id); m.setAttribute("viewBox","0 0 10 10");
+  m.setAttribute("refX","9"); m.setAttribute("refY","5");
+  m.setAttribute("markerWidth","7"); m.setAttribute("markerHeight","7");
+  m.setAttribute("orient","auto-start-reverse");
+  const p=document.createElementNS(NS,"path");
+  p.setAttribute("d","M0,0 L10,5 L0,10 z"); p.setAttribute("fill",color);
+  m.appendChild(p); defs.appendChild(m);
+}
+addMarker("#3a4e6e","arrow");
+addMarker("#fbbf24","arrowFlow");
+
+const edgeEls = [], nodeEls = {};
+// edges
+EDGES.forEach((e,i)=>{
+  const g = document.createElementNS(NS,"g");
+  g.setAttribute("class","edge"); g.dataset.id = e.from+"→"+e.to;
+  const p = document.createElementNS(NS,"path");
+  const a=pos[e.from], b=pos[e.to];
+  const d = curvePath(a,b);
+  p.setAttribute("d",d);
+  p.setAttribute("marker-end","url(#arrow)");
+  g.appendChild(p);
+  const mid = pointAt(a,b,0.5);
+  const el = document.createElementNS(NS,"text");
+  el.setAttribute("class","elabel"); el.setAttribute("x",mid.x); el.setAttribute("y",mid.y-6);
+  el.setAttribute("text-anchor","middle");
+  el.textContent = e.label;
+  g.appendChild(el);
+  svg.appendChild(g); edgeEls.push({g,p,el,e});
+});
+function curvePath(a,b){
+  const dx=b.x-a.x, dy=b.y-a.y;
+  if(Math.abs(dy)<30 && Math.abs(dx)>50){ // 同层水平
+    const mx=(a.x+b.x)/2;
+    return `M${a.x},${a.y} C${mx},${a.y} ${mx},${b.y} ${b.x},${b.y}`;
+  }
+  const c = Math.min(90, Math.max(30, Math.abs(dx)*0.4));
+  return `M${a.x},${a.y} C${a.x+c},${a.y} ${b.x-c},${b.y} ${b.x},${b.y}`;
+}
+function pointAt(a,b,t){
+  return {x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t};
+}
+
+// nodes
+const tooltip = document.getElementById("tooltip");
+const detail = document.getElementById("detail");
+NODES.forEach(n=>{
+  const g = document.createElementNS(NS,"g");
+  g.setAttribute("class","node"); g.dataset.id=n.id;
+  const rect = document.createElementNS(NS,"rect");
+  rect.setAttribute("x", pos[n.id].x - pos[n.id].w/2);
+  rect.setAttribute("y", pos[n.id].y - pos[n.id].h/2);
+  rect.setAttribute("width", pos[n.id].w);
+  rect.setAttribute("height", pos[n.id].h);
+  rect.setAttribute("rx","9");
+  rect.setAttribute("fill", LAYER_COLOR[n.layer]);
+  rect.setAttribute("fill-opacity", n.layer==="port" ? 0.12 : 0.22);
+  rect.setAttribute("stroke", LAYER_COLOR[n.layer]);
+  rect.setAttribute("stroke-width","1.4");
+  rect.setAttribute("stroke-dasharray", n.layer==="port" ? "5 3" : "0");
+  g.appendChild(rect);
+  const dot = document.createElementNS(NS,"circle");
+  dot.setAttribute("cx", pos[n.id].x - pos[n.id].w/2 + 10);
+  dot.setAttribute("cy", pos[n.id].y - 6);
+  dot.setAttribute("r","3"); dot.setAttribute("fill", LAYER_COLOR[n.layer]);
+  g.appendChild(dot);
+  const label = document.createElementNS(NS,"text");
+  label.setAttribute("x", pos[n.id].x);
+  label.setAttribute("y", pos[n.id].y + 4);
+  label.setAttribute("text-anchor","middle");
+  label.textContent = n.label;
+  g.appendChild(label);
+  // 交互
+  g.addEventListener("mouseenter", ev=>showTooltip(n, ev));
+  g.addEventListener("mousemove", ev=>moveTooltip(ev));
+  g.addEventListener("mouseleave", ()=>tooltip.style.display="none");
+  g.addEventListener("click", ()=>showDetail(n));
+  svg.appendChild(g); nodeEls[n.id] = {g,rect,label};
+});
+svg.addEventListener("mouseleave", ()=>{ if(detail.style.display!=="block") tooltip.style.display="none"; });
+
+function showTooltip(n, ev){
+  const tt = tooltip;
+  tt.innerHTML = `<div class="tt-title"><span class="tt-layer" style="background:${LAYER_COLOR[n.layer]}">${LAYER_NAME[n.layer]}</span> ${n.label}</div>
+    <div class="tt-file">${n.file||"外部宿主 / 协议"}</div>
+    <div class="tt-desc">${n.description}</div>`;
+  tt.style.display="block";
+  moveTooltip(ev);
+}
+function moveTooltip(ev){
+  const tt = tooltip, r = document.getElementById("diagram").getBoundingClientRect();
+  let x = ev.clientX - r.left + 14, y = ev.clientY - r.top + 14;
+  const tw = tt.offsetWidth, th = tt.offsetHeight;
+  if(x + tw > r.width - 8) x = ev.clientX - r.left - tw - 10;
+  if(y + th > r.height - 8) y = ev.clientY - r.top - th - 10;
+  tt.style.left = x+"px"; tt.style.top = y+"px";
+}
+function showDetail(n){
+  detail.innerHTML = `<button class="close" onclick="this.parentNode.style.display='none'">✕</button>
+    <h3><span class="tt-layer" style="background:${LAYER_COLOR[n.layer]}">${LAYER_NAME[n.layer]}</span> ${n.label}</h3>
+    <div class="d-file">${n.file||"外部宿主 / 协议"}</div>
+    <div class="d-desc">${n.description}</div>
+    <ul>${n.details.map(d=>`<li>${d}</li>`).join("")}</ul>`;
+  detail.style.display="block";
+  setSelected(n.id);
+}
+
+/* ============ 流程面板 ============ */
+const flowList = document.getElementById("flowList");
+const flowItems = [];
+FLOWS.forEach((f,i)=>{
+  const div = document.createElement("div");
+  div.className = "flow-item"; div.dataset.id = f.id;
+  div.innerHTML = `<div class="f-name">${f.name} <span class="f-id">${f.id}</span></div>
+    <div class="f-desc">${f.description}</div>
+    <div class="f-steps">${f.steps.map(s=>`<span class="f-step" data-step="${s}">${s}</span>`).join("")}</div>`;
+  div.addEventListener("click", ()=>selectFlow(f.id));
+  flowList.appendChild(div);
+  flowItems.push({div, f});
+});
+
+/* ============ 高亮逻辑 ============ */
+let selectedNode = null, activeFlow = null;
+function setSelected(id){
+  selectedNode = id;
+  for(const k in nodeEls) nodeEls[k].rect.classList.toggle("selected", k===id);
+}
+function selectFlow(fid){
+  activeFlow = fid;
+  const f = FLOWS.find(x=>x.id===fid);
+  const nodeSet = new Set(f.steps);
+  const edgeSet = new Set();
+  // 沿 steps 相邻对匹配 edge
+  for(let i=0;i<f.steps.length-1;i++){
+    const a=f.steps[i], b=f.steps[i+1];
+    edgeSet.add(a+"→"+b);
+    edgeSet.add(b+"→"+a);
+  }
+  for(const {g,p,el,e} of edgeEls){
+    const key = e.from+"→"+e.to;
+    const flowed = edgeSet.has(key);
+    g.classList.toggle("flowed", flowed);
+    g.classList.toggle("dim", !flowed && activeFlow!==null);
+    p.setAttribute("marker-end", flowed ? "url(#arrowFlow)" : "url(#arrow)");
+  }
+  for(const k in nodeEls){
+    const flowed = nodeSet.has(k);
+    nodeEls[k].g.classList.toggle("flowed", flowed);
+    nodeEls[k].g.classList.toggle("dim", !flowed && activeFlow!==null);
+  }
+  // 面板状态
+  flowItems.forEach(({div,f2})=>div.classList.toggle("active", f2.id===fid));
+  flowItems.forEach(({div,f2})=>{
+    if(f2.id!==fid) return;
+    div.querySelectorAll(".f-step").forEach(s=>s.classList.toggle("hl", nodeSet.has(s.dataset.step)));
+  });
+  // 面板滚动到选中项
+  const el = document.getElementById("flowList").querySelector(`[data-id="${fid}"]`);
+  el && el.scrollIntoView({block:"nearest"});
+}
+function clearFlow(){
+  activeFlow=null;
+  for(const {g,p,el} of edgeEls){ g.classList.remove("flowed","dim"); p.setAttribute("marker-end","url(#arrow)"); }
+  for(const k in nodeEls) nodeEls[k].g.classList.remove("flowed","dim");
+  flowItems.forEach(({div})=>div.classList.remove("active"));
+}
+
+/* ============ 图例 ============ */
+const legend = document.getElementById("legend");
+legend.innerHTML = LAYERS.map(ly=>`<div class="lg-row"><span class="lg-swatch" style="background:${LAYER_COLOR[ly]}"></span>${LAYER_NAME[ly]}（${ly}）</div>`).join("");
+
+/* ============ 响应式 ============ */
+document.getElementById("bcNodes").textContent = NODES.length;
+document.getElementById("bcFlows").textContent = FLOWS.length;
+const panelToggle = document.getElementById("panelToggle");
+panelToggle.addEventListener("click", ()=>document.getElementById("sidebar").classList.toggle("open"));
+
+// 初始：选中一个流程演示
+selectFlow("f-dsh");
+</script>
+</body>
+</html>

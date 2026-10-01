@@ -22,7 +22,7 @@ export declare function objectSchemaToTypebox(schema: ObjectSchema): TObject;
  */
 export declare function formatResultText(value: unknown): string;
 /**
- * 遍历 buildCatalog(env)，对每个 entry 调 pi.registerTool。
+ * 遍历 buildCatalog({}, infra, policy)，对每个 entry 调 pi.registerTool。
  * execute 转调 entry.execute（已含 missing-args + toErrorPayload，平台无关），结果经 formatResultText 入 content。
  */
 export declare function registerPiTools(pi: ExtensionAPI, infra: InfraEnv, policy: Policy): void;
