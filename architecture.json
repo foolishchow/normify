@@ -97,19 +97,6 @@
       ]
     },
     {
-      "id": "ad-pi",
-      "label": "pi 扩展适配器",
-      "layer": "adapter",
-      "kind": "adapter",
-      "file": "src/pi/normify.ts",
-      "description": "pi 本地扩展。registerPiTools(pi, infra, policy) 经 pi.registerTool 注册 31 工具。",
-      "details": [
-        "JSON Schema → typebox 投影（StringEnum + formatResultText）",
-        "companion 钩子：pi.on('tool_result') createCompanionHandler（WRITE_TOOLS）",
-        "异步 factory 加载（pi 支持 async factory）"
-      ]
-    },
-    {
       "id": "ad-pi-client",
       "label": "pi companion 扩展",
       "layer": "adapter",
@@ -453,14 +440,8 @@
     },
     {
       "from": "host-pi",
-      "to": "ad-pi",
-      "label": "extension load",
-      "kind": "deploy"
-    },
-    {
-      "from": "host-pi",
       "to": "ad-pi-client",
-      "label": "thin client load",
+      "label": "companion ext",
       "kind": "deploy"
     },
     {
@@ -479,18 +460,6 @@
       "from": "ad-mcp-http",
       "to": "uc-catalog",
       "label": "tools/list+call",
-      "kind": "call"
-    },
-    {
-      "from": "ad-pi",
-      "to": "uc-catalog",
-      "label": "registerTool",
-      "kind": "call"
-    },
-    {
-      "from": "ad-pi-client",
-      "to": "data-mcp",
-      "label": "MCP client transport",
       "kind": "call"
     },
     {
@@ -521,12 +490,6 @@
       "from": "ad-dsh",
       "to": "uc-companion",
       "label": "installCompanionReminder",
-      "kind": "call"
-    },
-    {
-      "from": "ad-pi",
-      "to": "uc-companion",
-      "label": "tool_result hook",
       "kind": "call"
     },
     {
@@ -726,6 +689,18 @@
       "to": "data-mcp",
       "label": "原生 MCP mcp.json",
       "kind": "deploy"
+    },
+    {
+      "from": "ad-pi-client",
+      "to": "uc-companion",
+      "label": "createCompanionHandler",
+      "kind": "call"
+    },
+    {
+      "from": "host-pi",
+      "to": "ad-mcp-stdio",
+      "label": "mcp.json spawn",
+      "kind": "deploy"
     }
   ],
   "flows": [
@@ -754,13 +729,13 @@
     },
     {
       "id": "f-pi-local",
-      "name": "pi 扩展工具调用",
-      "description": "pi 宿主加载本地扩展：JSON Schema→typebox 投影注册 31 工具 → 调用经 catalog → engine。",
+      "name": "pi 原生 MCP stdio 调用",
+      "description": "pi 经原生 MCP（mcp.json）stdio 连 lib/mcp/server.js：initialize → tools/list → tools/call（catalog 单源，同 Claude Code/Cursor）。",
       "steps": [
         "host-pi",
-        "ad-pi",
-        "uc-catalog",
-        "en-store"
+        "ad-mcp-stdio",
+        "uc-session",
+        "uc-catalog"
       ]
     },
     {
@@ -823,9 +798,9 @@
     {
       "id": "f-companion",
       "name": "Companion 提醒",
-      "description": "连续写工具达阈值 → companionReminder 注入提醒（server 计 normify 写 / pi-client 计外部 write）。",
+      "description": "pi companion-only 扩展（ad-pi-client）经 pi.on('tool_result') 计外部写；server 侧 companionCount 计 normify_* 写。",
       "steps": [
-        "ad-pi",
+        "ad-pi-client",
         "uc-companion"
       ]
     },

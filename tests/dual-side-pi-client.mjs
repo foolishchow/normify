@@ -4,7 +4,7 @@
 //   A-006②：N 次外部写（WRITE_TOOLS）后 reminder（第 3 次 push）+ 计数重置。
 //   A-006③：非 WRITE_TOOLS 不计。
 //   A-006④：isError=true 达阈值 void（仅 !isError 注入）。
-// companion handler 行为同 in-process（pi-projection.mjs 已覆 createCompanionHandler from normify.js）。
+// companion handler 行为：A-006 覆 createCompanionHandler from normify-client.js（独立实现，不依赖 catalog/engine）。
 process.env.NORMIFY_DEV_COMPANION_REMINDER = '1';
 process.env.NORMIFY_DEV_COMPANION_REMINDER_AFTER = '3';
 

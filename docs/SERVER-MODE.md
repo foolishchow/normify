@@ -7,7 +7,7 @@
 
 ## 1. 背景与目标
 
-S0–S6 把 normify 拆成"平台无关 catalog + 三适配器"（DSH stdio / MCP stdio / pi in-process），但每用户本地都装一份 catalog/engine/yaml——代码实现不共享。
+S0–S6 把 normify 拆成"平台无关 catalog + 适配器"（DSH in-process / MCP stdio+http），但每用户本地都装一份 catalog/engine/yaml——代码实现不共享。pi 0.99.2+ 原生 MCP 后，pi 经 `mcp.json` 连 MCP server（不再需 in-process 扩展）；DSH 因自有插件模型仍 in-process。
 
 **Dual-side mode 目标**：normify 做成 server-side 长驻服务，多 agent（Claude Code / Cursor / Codex / pi）作客户端连它；catalog/engine/companion 代码只活一处（服务器），客户端瘦。
 
@@ -171,7 +171,7 @@ client 跑 normify_fingerprint(repoRoot, source)
 | Q3 rootDir/repoRoot | rootDir=base+user+project 三维；repoRoot 经 Bridge 虚拟化 | §2.1 + §4 + §7 |
 | Q4 companion | split（维持 §9 Q5） | §10 |
 | Q5 auth | token → userId + project allowlist；无 token=default+全可见 | §5.2 |
-| Q6 in-process pi 扩展留不留 | 留（单 dev fallback） | 用户二选一 |
+| Q6 in-process pi 扩展留不留 | **不留**（pi 0.99.2+ 原生 MCP 后冗余，已砍） | pi 经 `mcp.json` 连 MCP server；DSH in-process 保留（DSH 无 MCP） |
 | Q7 Bridge 实现优先级 | v1 LocalBridge + SessionCacheBridge；RemoteBridge future | 证据工具是快照校验 |
 | **Q8 隔离模型** | **(i) 完全独立**——每用户一棵独立图，无合并，无共享 main | §4 |
 | **Q9 图共享** | **否**——各用户图互不可见；无 publish/merge 工具 | Q8 决断 |

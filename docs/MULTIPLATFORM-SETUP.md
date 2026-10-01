@@ -7,7 +7,7 @@
 normify 提供 3 个适配器入口（共享同一 catalog，31 个工具零逻辑重复）+ 1 个可复用技能（SKILL.md 正文不改）：
 - DSH（DeepSeek Harness）插件：`lib/index.js`
 - MCP stdio server（Claude Code / Codex / Cursor）：`lib/mcp/server.js`
-- pi 扩展（@earendil-works/pi-coding-agent）：`src/pi/normify.ts`
+- pi（@earendil-works/pi-coding-agent）：原生 MCP（`mcp.json` 连 `lib/mcp/server.js`）+ 可选 companion-only 扩展（`src/pi/normify-client.ts`）
 
 **前置（所有宿主）**：Node.js ≥18（`package.json` engines）；各宿主另需 `npm install`（见各节——DSH 装 dependencies（仅用 yaml）+ peerDeps，MCP 装 dependencies（yaml + @modelcontextprotocol/sdk），pi 装以提供 transitive yaml）。
 
@@ -49,23 +49,16 @@ normify 提供 3 个适配器入口（共享同一 catalog，31 个工具零逻�
 
 ## 3. pi（@earendil-works/pi-coding-agent）
 
-**pi 0.99.2+ 原生支持 MCP**（stdio + streamable HTTP，`mcp.json` 配置）。故 pi 有两种接入 normify 的方式：
+**pi 0.99.2+ 原生支持 MCP**（stdio + streamable HTTP，`mcp.json` 配置）。pi 经原生 MCP 接入 normify（与其他 MCP host 统一）；companion 外部写计数经可选 companion-only 扩展。
 
-### 3a. 本地扩展（in-process，最高效 + 全 companion）
-
-- 入口：`src/pi/normify.ts`（pi 自动发现 .ts glob，非 .js）
-- 前置：`npm install`（pi 加载 src/pi/normify.ts → catalog → engine/policy+frontmatter → `yaml`，需 repo node_modules 提供；typebox/pi-ai 由 repo devDeps 或 pi node_modules 解析）
-- 安装：软链 `src/pi/normify.ts` → `~/.pi/agent/extensions/normify.ts`（或 `pi -e ./src/pi/normify.ts`）
-- env：启动 pi 前在 shell 导出（`export NORMIFY_ROOT_DIR=<project>`；`export NORMIFY_REQUIRE_BILINGUAL=1`；可选 `export NORMIFY_DEV_COMPANION_REMINDER=1; export NORMIFY_DEV_COMPANION_REMINDER_AFTER=8`），或经 pi settings 配置
-- SKILL.md：`~/.pi/agent/skills/normify-gen/`，或 settings `"skills": ["<repo>/skills"]`
-- 验证：pi 会话 `/reload` 后调 `normify_help topic=tools` → 31 工具
-
-### 3b. 原生 MCP（经 mcp.json，与其他 MCP host 统一）
+### 3. 原生 MCP（经 mcp.json）
 
 - 单边 stdio：`~/.pi/agent/mcp.json` 或 `.pi/mcp.json`：`{"mcpServers":{"normify":{"command":"node","args":["<repo>/lib/mcp/server.js"],"env":{"NORMIFY_ROOT_DIR":"<project>","NORMIFY_REQUIRE_BILINGUAL":"1"}}}}`
 - dual-side http：同 Claude Code/Cursor（§4.2）
 - 工具名 `mcp__normify__normify_*`；exposure 可选 `direct`（常用）或 `codemode`/`deferred`
 - 命令：`pi mcp add normify -- node <repo>/lib/mcp/server.js` / `pi mcp list` / 会话内 `/mcp`
+- SKILL.md：`~/.pi/agent/skills/normify-gen/`，或 settings `"skills": ["<repo>/skills"]`
+- 验证：pi 会话内调 `mcp__normify__normify_help topic=tools` → 31 工具
 - companion：server 侧计 normify_* 写；外部写计数需装 §4.4 companion-only 扩展
 
 ## 4. Dual-Side Mode（多 agent 连同一 server）
